@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import Photos
 
 final class CameraService: NSObject, ObservableObject {
     @Published var isRecording: Bool = false
@@ -9,18 +10,23 @@ final class CameraService: NSObject, ObservableObject {
     let session = AVCaptureSession()
 
     private let sessionQueue = DispatchQueue(label: "retrocam.session.queue")
+    private let photoOutput = AVCapturePhotoOutput()
+
     private var videoInput: AVCaptureDeviceInput?
     private var isConfigured = false
     private var currentPosition: AVCaptureDevice.Position = .back
+    private var hasCameraAccess = false
+    private var hasPhotoAccess = false
 
     override init() {
         super.init()
-        requestCameraAccess()
+        requestPermissions()
     }
 
     func startIfNeeded() {
         sessionQueue.async { [weak self] in
             guard let self else { return }
+            guard self.hasCameraAccess else { return }
 
             if !self.isConfigured {
                 self.configureSession()
@@ -73,19 +79,37 @@ final class CameraService: NSObject, ObservableObject {
     }
 
     func takePhoto() {
-        // Пока специально пусто.
-        // Следующим шагом добавим реальный снимок.
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            guard self.isConfigured else { return }
+
+            let settings: AVCapturePhotoSettings
+            if self.photoOutput.availablePhotoCodecTypes.contains(.jpeg) {
+                settings = AVCapturePhotoSettings(format: [
+                    AVVideoCodecKey: AVVideoCodecType.jpeg
+                ])
+            } else {
+                settings = AVCapturePhotoSettings()
+            }
+
+            settings.isHighResolutionPhotoEnabled = false
+            self.photoOutput.capturePhoto(with: settings, delegate: self)
+        }
     }
 
     func toggleRecording() {
-        // Пока специально пусто.
-        // Видео добавим позже.
+        // Пока оставляем пустым
     }
 
-    private func requestCameraAccess() {
-        AVCaptureDevice.requestAccess(for: .video) { _ in
-            // Ничего не делаем здесь специально.
-            // Камера стартует в startIfNeeded().
+    private func requestPermissions() {
+        AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+            guard let self else { return }
+            self.hasCameraAccess = granted
+
+            PHPhotoLibrary.requestAuthorization(for: .addOnly) { [weak self] status in
+                guard let self else { return }
+                self.hasPhotoAccess = (status == .authorized || status == .limited)
+            }
         }
     }
 
@@ -102,6 +126,10 @@ final class CameraService: NSObject, ObservableObject {
             if session.canAddInput(input) {
                 session.addInput(input)
                 videoInput = input
+            }
+
+            if session.canAddOutput(photoOutput) {
+                session.addOutput(photoOutput)
             }
 
             session.commitConfiguration()
@@ -126,5 +154,21 @@ final class CameraService: NSObject, ObservableObject {
             code: -1,
             userInfo: [NSLocalizedDescriptionKey: "Камера недоступна"]
         )
+    }
+}
+
+extension CameraService: AVCapturePhotoCaptureDelegate {
+    func photoOutput(_ output: AVCapturePhotoOutput,
+                     didFinishProcessingPhoto photo: AVCapturePhoto,
+                     error: Error?) {
+        if error != nil { return }
+        guard let data = photo.fileDataRepresentation() else { return }
+        guard hasPhotoAccess else { return }
+
+        PHPhotoLibrary.shared().performChanges({
+            let request = PHAssetCreationRequest.forAsset()
+            let options = PHAssetResourceCreationOptions()
+            request.addResource(with: .photo, data: data, options: options)
+        })
     }
 }
