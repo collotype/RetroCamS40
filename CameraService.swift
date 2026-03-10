@@ -15,26 +15,28 @@ final class CameraService: NSObject, ObservableObject {
     private var videoInput: AVCaptureDeviceInput?
     private var isConfigured = false
     private var currentPosition: AVCaptureDevice.Position = .back
-    private var hasCameraAccess = false
     private var hasPhotoAccess = false
 
     override init() {
         super.init()
-        requestPermissions()
+        requestPhotoPermission()
     }
 
     func startIfNeeded() {
-        sessionQueue.async { [weak self] in
-            guard let self else { return }
-            guard self.hasCameraAccess else { return }
+        let status = AVCaptureDevice.authorizationStatus(for: .video)
 
-            if !self.isConfigured {
-                self.configureSession()
+        switch status {
+        case .authorized:
+            startSession()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                guard let self else { return }
+                if granted {
+                    self.startSession()
+                }
             }
-
-            if self.isConfigured && !self.session.isRunning {
-                self.session.startRunning()
-            }
+        default:
+            break
         }
     }
 
@@ -101,15 +103,33 @@ final class CameraService: NSObject, ObservableObject {
         // Пока оставляем пустым
     }
 
-    private func requestPermissions() {
-        AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+    private func startSession() {
+        sessionQueue.async { [weak self] in
             guard let self else { return }
-            self.hasCameraAccess = granted
 
-            PHPhotoLibrary.requestAuthorization(for: .addOnly) { [weak self] status in
-                guard let self else { return }
-                self.hasPhotoAccess = (status == .authorized || status == .limited)
+            if !self.isConfigured {
+                self.configureSession()
             }
+
+            if self.isConfigured && !self.session.isRunning {
+                self.session.startRunning()
+            }
+        }
+    }
+
+    private func requestPhotoPermission() {
+        let status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+
+        switch status {
+        case .authorized, .limited:
+            hasPhotoAccess = true
+        case .notDetermined:
+            PHPhotoLibrary.requestAuthorization(for: .addOnly) { [weak self] newStatus in
+                guard let self else { return }
+                self.hasPhotoAccess = (newStatus == .authorized || newStatus == .limited)
+            }
+        default:
+            hasPhotoAccess = false
         }
     }
 
