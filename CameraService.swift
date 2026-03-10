@@ -4,6 +4,7 @@ import Photos
 import UIKit
 import CoreImage
 import CoreMedia
+import QuartzCore
 
 final class CameraService: NSObject, ObservableObject {
     @Published var isRecording: Bool = false
