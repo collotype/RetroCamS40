@@ -1,0 +1,64 @@
+name: Create New Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Clean
+        run: rm -rf build Payload upload output
+
+      - name: Build app without signing
+        run: |
+          xcodebuild \
+            -project RetroCamS40.xcodeproj \
+            -scheme RetroCamS40 \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build
+
+      - name: Package IPA
+        run: |
+          APP_PATH=$(find build -type d -name "RetroCamS40.app" | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "RetroCamS40.app not found"
+            exit 1
+          fi
+
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP_PATH/Info.plist" 2>/dev/null || echo "1.0")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+          mkdir -p Payload upload
+          cp -R "$APP_PATH" Payload/
+          ditto -c -k --sequesterRsrc --keepParent Payload "upload/RetroCamS40-v${VERSION}.ipa"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: RetroCamS40 v${{ env.VERSION }}
+          tag_name: v${{ env.VERSION }}-build.${{ github.run_number }}
+          files: upload/*.ipa
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          draft: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
