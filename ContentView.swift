@@ -2,38 +2,61 @@ import SwiftUI
 import AVFoundation
 
 struct ContentView: View {
-    enum Mode: String, CaseIterable, Identifiable {
-        case photo = "Фото"
-        case video = "Видео"
-        var id: String { rawValue }
-    }
-
     @StateObject private var camera = CameraService()
-    @State private var mode: Mode = .photo
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                CameraPreview(session: camera.session)
-                    .ignoresSafeArea(edges: .top)
+                ZStack {
+                    if let previewImage = camera.previewImage {
+                        GeometryReader { geo in
+                            Image(uiImage: previewImage)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: geo.size.width, height: geo.size.height)
+                                .clipped()
+                        }
+                    } else {
+                        CameraPreview(session: camera.session)
+                            .ignoresSafeArea(edges: .top)
+                    }
+                }
+                .overlay(alignment: .topLeading) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("RetroCam")
+                            .font(.headline)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(.black.opacity(0.5))
+                            .cornerRadius(8)
+
+                        Text(camera.selectedPreset.title)
+                            .font(.caption)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(.black.opacity(0.5))
+                            .cornerRadius(8)
+                    }
+                    .padding(.top, 16)
+                    .padding(.leading, 12)
+                }
 
                 controls
                     .padding(.vertical, 14)
-                    .background(.black.opacity(0.9))
+                    .background(.black.opacity(0.92))
             }
         }
         .onAppear { camera.startIfNeeded() }
         .onDisappear { camera.stop() }
     }
 
-    @ViewBuilder
     private var controls: some View {
-        VStack(spacing: 10) {
-            Picker("Режим", selection: $mode) {
-                ForEach(Mode.allCases) { m in
-                    Text(m.rawValue).tag(m)
+        VStack(spacing: 12) {
+            Picker("Пресет", selection: $camera.selectedPreset) {
+                ForEach(RetroPreset.allCases) { preset in
+                    Text(preset.shortTitle).tag(preset)
                 }
             }
             .pickerStyle(.segmented)
@@ -54,11 +77,7 @@ struct ContentView: View {
                 Spacer()
 
                 Button {
-                    if mode == .photo {
-                        camera.takePhoto()
-                    } else {
-                        camera.toggleRecording()
-                    }
+                    camera.takePhoto()
                 } label: {
                     ZStack {
                         Circle()
@@ -66,7 +85,7 @@ struct ContentView: View {
                             .frame(width: 78, height: 78)
 
                         Circle()
-                            .fill(mode == .video && camera.isRecording ? .red : .white)
+                            .fill(.white)
                             .frame(width: 62, height: 62)
                     }
                 }
@@ -86,6 +105,10 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal, 22)
+
+            Text("Фото • Live-превью с эффектом")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.8))
         }
     }
 }
