@@ -185,11 +185,21 @@ extension CameraService: AVCapturePhotoCaptureDelegate {
         if error != nil { return }
         guard let data = photo.fileDataRepresentation() else { return }
         guard hasPhotoAccess else { return }
+        guard let image = UIImage(data: data) else { return }
+
+        let finalImage: UIImage
+        if useRetroFilter {
+            finalImage = RetroFilter.makeRetroPhoto(from: image, addDateStamp: addDateStamp)
+        } else {
+            finalImage = image
+        }
+
+        guard let finalData = finalImage.jpegData(compressionQuality: 0.9) else { return }
 
         PHPhotoLibrary.shared().performChanges({
             let request = PHAssetCreationRequest.forAsset()
             let options = PHAssetResourceCreationOptions()
-            request.addResource(with: .photo, data: data, options: options)
+            request.addResource(with: .photo, data: finalData, options: options)
         })
     }
 }
