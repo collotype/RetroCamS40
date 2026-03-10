@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import Photos
+import UIKit
 
 final class CameraService: NSObject, ObservableObject {
     @Published var isRecording: Bool = false
