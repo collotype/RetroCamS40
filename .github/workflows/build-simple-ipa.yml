@@ -1,0 +1,55 @@
+name: Build Simple IPA
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        run: sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Clean build folder
+        run: rm -rf build
+
+      - name: Archive app
+        run: |
+          xcodebuild \
+            -project RetroCamS40.xcodeproj \
+            -scheme RetroCamS40 \
+            -configuration Release \
+            -archivePath build/RetroCam.xcarchive \
+            -allowProvisioningUpdates \
+            archive
+
+      - name: Export IPA
+        run: |
+          mkdir -p build/export
+          xcodebuild \
+            -exportArchive \
+            -archivePath build/RetroCam.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist ExportOptions.plist
+
+      - name: Show build result
+        run: |
+          ls -la build || true
+          ls -la build/export || true
+          find build -name "*.ipa" || true
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: RetroCam-ipa
+          path: build/export/*.ipa
+          if-no-files-found: error
