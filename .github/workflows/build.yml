@@ -1,4 +1,4 @@
-name: Build Simple App
+name: Build Unsigned IPA
 
 on:
   push:
@@ -10,17 +10,17 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Xcode
-        run: sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
       - name: Show Xcode version
         run: xcodebuild -version
 
-      - name: Clean build folder
-        run: rm -rf build
+      - name: Clean
+        run: rm -rf build Payload output
 
       - name: Build app without signing
         run: |
@@ -35,22 +35,29 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             clean build
 
-      - name: Package app
+      - name: Package IPA
         run: |
-          mkdir -p output
           APP_PATH=$(find build -type d -name "RetroCamS40.app" | head -n 1)
-          echo "APP_PATH=$APP_PATH"
-          cd "$(dirname "$APP_PATH")"
-          zip -r ../../../../output/RetroCamS40.app.zip RetroCamS40.app
+          if [ -z "$APP_PATH" ]; then
+            echo "RetroCamS40.app not found"
+            exit 1
+          fi
 
-      - name: Show build result
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP_PATH/Info.plist" 2>/dev/null || echo "1.0")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+          mkdir -p Payload output
+          cp -R "$APP_PATH" Payload/
+          ditto -c -k --sequesterRsrc --keepParent Payload "output/RetroCamS40-v${VERSION}.ipa"
+
+      - name: Show result
         run: |
-          ls -la output || true
-          find build -name "*.app" || true
+          ls -la output
+          file output/*.ipa || true
 
-      - name: Upload app
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RetroCamS40-app
-          path: output/RetroCamS40.app.zip
+          name: RetroCamS40-ipa
+          path: output/*.ipa
           if-no-files-found: error
