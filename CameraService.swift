@@ -12,20 +12,15 @@ final class CameraService: NSObject, ObservableObject {
 
     private let sessionQueue = DispatchQueue(label: "retrocam.session.queue")
     private let photoOutput = AVCapturePhotoOutput()
-    private let movieOutput = AVCaptureMovieFileOutput()
 
     private var videoInput: AVCaptureDeviceInput?
-    private var audioInput: AVCaptureDeviceInput?
-
     private var isConfigured = false
     private var currentPosition: AVCaptureDevice.Position = .back
     private var hasPhotoAccess = false
-    private var hasMicrophoneAccess = false
 
     override init() {
         super.init()
         requestPhotoPermission()
-        requestMicrophonePermission()
     }
 
     func startIfNeeded() {
@@ -60,7 +55,6 @@ final class CameraService: NSObject, ObservableObject {
         sessionQueue.async { [weak self] in
             guard let self else { return }
             guard let currentInput = self.videoInput else { return }
-            guard !self.movieOutput.isRecording else { return }
 
             self.session.beginConfiguration()
             self.session.removeInput(currentInput)
@@ -102,39 +96,12 @@ final class CameraService: NSObject, ObservableObject {
             }
 
             settings.isHighResolutionPhotoEnabled = false
-
-            if let connection = self.photoOutput.connection(with: .video),
-               connection.isVideoOrientationSupported {
-                connection.videoOrientation = .portrait
-            }
-
             self.photoOutput.capturePhoto(with: settings, delegate: self)
         }
     }
 
     func toggleRecording() {
-        sessionQueue.async { [weak self] in
-            guard let self else { return }
-            guard self.isConfigured else { return }
-
-            if self.movieOutput.isRecording {
-                self.movieOutput.stopRecording()
-            } else {
-                let url = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("retrocam_\(UUID().uuidString).mov")
-
-                if let connection = self.movieOutput.connection(with: .video),
-                   connection.isVideoOrientationSupported {
-                    connection.videoOrientation = .portrait
-                }
-
-                self.movieOutput.startRecording(to: url, recordingDelegate: self)
-
-                DispatchQueue.main.async {
-                    self.isRecording = true
-                }
-            }
-        }
+        // Пока оставляем пустым
     }
 
     private func startSession() {
@@ -167,27 +134,11 @@ final class CameraService: NSObject, ObservableObject {
         }
     }
 
-    private func requestMicrophonePermission() {
-        let status = AVCaptureDevice.authorizationStatus(for: .audio)
-
-        switch status {
-        case .authorized:
-            hasMicrophoneAccess = true
-        case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
-                guard let self else { return }
-                self.hasMicrophoneAccess = granted
-            }
-        default:
-            hasMicrophoneAccess = false
-        }
-    }
-
     private func configureSession() {
         guard !isConfigured else { return }
 
         session.beginConfiguration()
-        session.sessionPreset = .high
+        session.sessionPreset = .photo
 
         do {
             let camera = try makeCamera(position: currentPosition)
@@ -198,21 +149,8 @@ final class CameraService: NSObject, ObservableObject {
                 videoInput = input
             }
 
-            if hasMicrophoneAccess,
-               let mic = AVCaptureDevice.default(for: .audio) {
-                let micInput = try AVCaptureDeviceInput(device: mic)
-                if session.canAddInput(micInput) {
-                    session.addInput(micInput)
-                    audioInput = micInput
-                }
-            }
-
             if session.canAddOutput(photoOutput) {
                 session.addOutput(photoOutput)
-            }
-
-            if session.canAddOutput(movieOutput) {
-                session.addOutput(movieOutput)
             }
 
             session.commitConfiguration()
@@ -263,33 +201,5 @@ extension CameraService: AVCapturePhotoCaptureDelegate {
             let options = PHAssetResourceCreationOptions()
             request.addResource(with: .photo, data: finalData, options: options)
         })
-    }
-}
-
-extension CameraService: AVCaptureFileOutputRecordingDelegate {
-    func fileOutput(_ output: AVCaptureFileOutput,
-                    didStartRecordingTo fileURL: URL,
-                    from connections: [AVCaptureConnection]) {
-        DispatchQueue.main.async {
-            self.isRecording = true
-        }
-    }
-
-    func fileOutput(_ output: AVCaptureFileOutput,
-                    didFinishRecordingTo outputFileURL: URL,
-                    from connections: [AVCaptureConnection],
-                    error: Error?) {
-        DispatchQueue.main.async {
-            self.isRecording = false
-        }
-
-        guard error == nil else { return }
-        guard hasPhotoAccess else { return }
-
-        PHPhotoLibrary.shared().performChanges({
-            PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: outputFileURL)
-        }) { _, _ in
-            try? FileManager.default.removeItem(at: outputFileURL)
-        }
     }
 }
