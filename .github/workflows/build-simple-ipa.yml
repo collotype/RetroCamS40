@@ -1,4 +1,4 @@
-name: Build Simple IPA
+name: Build Simple App
 
 on:
   push:
@@ -22,34 +22,35 @@ jobs:
       - name: Clean build folder
         run: rm -rf build
 
-      - name: Archive app
+      - name: Build app without signing
         run: |
           xcodebuild \
             -project RetroCamS40.xcodeproj \
             -scheme RetroCamS40 \
             -configuration Release \
-            -archivePath build/RetroCam.xcarchive \
-            -allowProvisioningUpdates \
-            archive
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build
 
-      - name: Export IPA
+      - name: Package app
         run: |
-          mkdir -p build/export
-          xcodebuild \
-            -exportArchive \
-            -archivePath build/RetroCam.xcarchive \
-            -exportPath build/export \
-            -exportOptionsPlist ExportOptions.plist
+          mkdir -p output
+          APP_PATH=$(find build -type d -name "RetroCamS40.app" | head -n 1)
+          echo "APP_PATH=$APP_PATH"
+          cd "$(dirname "$APP_PATH")"
+          zip -r ../../../../output/RetroCamS40.app.zip RetroCamS40.app
 
       - name: Show build result
         run: |
-          ls -la build || true
-          ls -la build/export || true
-          find build -name "*.ipa" || true
+          ls -la output || true
+          find build -name "*.app" || true
 
-      - name: Upload IPA
+      - name: Upload app
         uses: actions/upload-artifact@v4
         with:
-          name: RetroCam-ipa
-          path: build/export/*.ipa
+          name: RetroCamS40-app
+          path: output/RetroCamS40.app.zip
           if-no-files-found: error
