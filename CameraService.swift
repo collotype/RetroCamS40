@@ -2,21 +2,28 @@ import Foundation
 import AVFoundation
 import Photos
 import UIKit
+import CoreImage
+import CoreMedia
 
 final class CameraService: NSObject, ObservableObject {
     @Published var isRecording: Bool = false
     @Published var useRetroFilter: Bool = true
-    @Published var addDateStamp: Bool = true
+    @Published var addDateStamp: Bool = false
+    @Published var selectedPreset: RetroPreset = .pointAndShoot
+    @Published var previewImage: UIImage?
 
     let session = AVCaptureSession()
 
     private let sessionQueue = DispatchQueue(label: "retrocam.session.queue")
     private let photoOutput = AVCapturePhotoOutput()
+    private let videoDataOutput = AVCaptureVideoDataOutput()
+    private let ciContext = CIContext(options: nil)
 
     private var videoInput: AVCaptureDeviceInput?
     private var isConfigured = false
     private var currentPosition: AVCaptureDevice.Position = .back
     private var hasPhotoAccess = false
+    private var lastPreviewTimestamp: CFTimeInterval = 0
 
     override init() {
         super.init()
@@ -72,6 +79,8 @@ final class CameraService: NSObject, ObservableObject {
                     self.session.addInput(currentInput)
                     self.videoInput = currentInput
                 }
+
+                self.configureConnections()
             } catch {
                 self.session.addInput(currentInput)
                 self.videoInput = currentInput
@@ -96,12 +105,18 @@ final class CameraService: NSObject, ObservableObject {
             }
 
             settings.isHighResolutionPhotoEnabled = false
+
+            if let connection = self.photoOutput.connection(with: .video),
+               connection.isVideoOrientationSupported {
+                connection.videoOrientation = .portrait
+            }
+
             self.photoOutput.capturePhoto(with: settings, delegate: self)
         }
     }
 
     func toggleRecording() {
-        // Пока оставляем пустым
+        // Видео временно отключено специально.
     }
 
     private func startSession() {
@@ -153,11 +168,40 @@ final class CameraService: NSObject, ObservableObject {
                 session.addOutput(photoOutput)
             }
 
+            videoDataOutput.videoSettings = [
+                kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
+            ]
+            videoDataOutput.alwaysDiscardsLateVideoFrames = true
+            videoDataOutput.setSampleBufferDelegate(self, queue: sessionQueue)
+
+            if session.canAddOutput(videoDataOutput) {
+                session.addOutput(videoDataOutput)
+            }
+
+            configureConnections()
+
             session.commitConfiguration()
             isConfigured = true
         } catch {
             session.commitConfiguration()
             isConfigured = false
+        }
+    }
+
+    private func configureConnections() {
+        if let photoConnection = photoOutput.connection(with: .video),
+           photoConnection.isVideoOrientationSupported {
+            photoConnection.videoOrientation = .portrait
+        }
+
+        if let videoConnection = videoDataOutput.connection(with: .video) {
+            if videoConnection.isVideoOrientationSupported {
+                videoConnection.videoOrientation = .portrait
+            }
+
+            if videoConnection.isVideoMirroringSupported {
+                videoConnection.isVideoMirrored = (currentPosition == .front)
+            }
         }
     }
 
@@ -189,17 +233,53 @@ extension CameraService: AVCapturePhotoCaptureDelegate {
 
         let finalImage: UIImage
         if useRetroFilter {
-            finalImage = RetroFilter.makeRetroPhoto(from: image, addDateStamp: addDateStamp)
+            finalImage = RetroFilter.makeRetroPhoto(
+                from: image,
+                preset: selectedPreset,
+                addDateStamp: addDateStamp
+            )
         } else {
             finalImage = image
         }
 
-        guard let finalData = finalImage.jpegData(compressionQuality: 0.9) else { return }
+        guard let finalData = finalImage.jpegData(compressionQuality: 0.88) else { return }
 
         PHPhotoLibrary.shared().performChanges({
             let request = PHAssetCreationRequest.forAsset()
             let options = PHAssetResourceCreationOptions()
             request.addResource(with: .photo, data: finalData, options: options)
         })
+    }
+}
+
+extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
+    func captureOutput(_ output: AVCaptureOutput,
+                       didOutput sampleBuffer: CMSampleBuffer,
+                       from connection: AVCaptureConnection) {
+        let now = CACurrentMediaTime()
+        guard now - lastPreviewTimestamp > 0.10 else { return }
+        lastPreviewTimestamp = now
+
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+
+        var ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+
+        // Для более стабильного портретного превью
+        if currentPosition == .front {
+            ciImage = ciImage.oriented(.leftMirrored)
+        } else {
+            ciImage = ciImage.oriented(.right)
+        }
+
+        guard let image = RetroFilter.makePreviewImage(
+            from: ciImage,
+            preset: selectedPreset,
+            useRetro: useRetroFilter,
+            context: ciContext
+        ) else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.previewImage = image
+        }
     }
 }
