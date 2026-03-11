@@ -7,6 +7,17 @@
 
     <key>NSPhotoLibraryUsageDescription</key>
     <string>Приложению нужен доступ к медиатеке для встроенной галереи и просмотра фото и видео.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Camera access is required to take retro photos and videos.</string>
+
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Microphone access is required for video recording.</string>
+
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Photo library access is required to view saved media.</string>
+
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>Photo library access is required to save captured media.</string>
 
     <key>CFBundleDevelopmentRegion</key>
     <string>ru</string>
