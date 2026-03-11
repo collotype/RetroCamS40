@@ -1824,12 +1824,22 @@ private struct MediaItem: Identifiable, Hashable {
     }
 }
 
-private final class MediaLibraryStore: NSObject, ObservableObject {
+private final class MediaLibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
     @Published var items: [MediaItem] = []
     @Published var authorizationStatus: PHAuthorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
 
     private let manager = PHCachingImageManager()
     private var thumbCache = NSCache<NSString, UIImage>()
+    private var fetchResult: PHFetchResult<PHAsset>?
+
+    override init() {
+        super.init()
+        PHPhotoLibrary.shared().register(self)
+    }
+
+    deinit {
+        PHPhotoLibrary.shared().unregisterChangeObserver(self)
+    }
 
     func requestAndLoad() {
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -1850,6 +1860,7 @@ private final class MediaLibraryStore: NSObject, ObservableObject {
         default:
             DispatchQueue.main.async {
                 self.items = []
+                self.fetchResult = nil
             }
         }
     }
@@ -1859,7 +1870,11 @@ private final class MediaLibraryStore: NSObject, ObservableObject {
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
 
         let result = PHAsset.fetchAssets(with: options)
+        fetchResult = result
+        rebuildItems(from: result)
+    }
 
+    private func rebuildItems(from result: PHFetchResult<PHAsset>) {
         var collected: [MediaItem] = []
         result.enumerateObjects { asset, _, _ in
             if asset.mediaType == .image || asset.mediaType == .video {
@@ -1869,6 +1884,25 @@ private final class MediaLibraryStore: NSObject, ObservableObject {
 
         DispatchQueue.main.async {
             self.items = collected
+        }
+    }
+
+    func photoLibraryDidChange(_ changeInstance: PHChange) {
+        guard let currentFetch = fetchResult else {
+            DispatchQueue.main.async { [weak self] in
+                self?.loadAssets()
+            }
+            return
+        }
+
+        if let changes = changeInstance.changeDetails(for: currentFetch) {
+            let updatedFetch = changes.fetchResultAfterChanges
+            fetchResult = updatedFetch
+            rebuildItems(from: updatedFetch)
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.loadAssets()
+            }
         }
     }
 
@@ -1924,7 +1958,6 @@ private final class MediaLibraryStore: NSObject, ObservableObject {
         }
     }
 }
-
 // MARK: - Helpers
 
 private func moscowTimeString(from date: Date) -> String {
