@@ -6,6 +6,8 @@ enum RetroPreset: String, CaseIterable, Identifiable {
     case pointAndShoot
     case vhs
     case oldPhone
+    case nokia6230i
+    case n73
 
     var id: String { rawValue }
 
@@ -16,7 +18,11 @@ enum RetroPreset: String, CaseIterable, Identifiable {
         case .vhs:
             return "VHS-камера"
         case .oldPhone:
-            return "Старый телефон 0.3MP"
+            return "Nokia VGA 0.3MP"
+        case .nokia6230i:
+            return "Nokia 6230i 1.3MP"
+        case .n73:
+            return "Nokia N73 3.2MP"
         }
     }
 
@@ -27,7 +33,11 @@ enum RetroPreset: String, CaseIterable, Identifiable {
         case .vhs:
             return "VHS"
         case .oldPhone:
-            return "Nokia"
+            return "0.3MP"
+        case .nokia6230i:
+            return "6230i"
+        case .n73:
+            return "N73"
         }
     }
 }
@@ -60,13 +70,7 @@ enum RetroFilter {
                                  preset: RetroPreset,
                                  useRetro: Bool,
                                  context: CIContext) -> UIImage? {
-        let output: CIImage
-
-        if useRetro {
-            output = applyRetro(to: image, preset: preset)
-        } else {
-            output = image
-        }
+        let output = useRetro ? applyRetro(to: image, preset: preset) : image
 
         guard let cgImage = context.createCGImage(output, from: output.extent) else {
             return nil
@@ -80,11 +84,20 @@ enum RetroFilter {
 
         switch preset {
         case .pointAndShoot:
-            return base.resized(to: CGSize(width: 1280, height: 960))
+            // Типичная поздняя мыльница: визуально ещё норм, но дёшево
+            return base.resized(to: CGSize(width: 1600, height: 1200))
         case .vhs:
-            return base.resized(to: CGSize(width: 720, height: 480))
+            // Домашняя видеокамера / кассетный вайб
+            return base.resized(to: CGSize(width: 720, height: 576))
         case .oldPhone:
+            // VGA 0.3 MP
             return base.resized(to: CGSize(width: 640, height: 480))
+        case .nokia6230i:
+            // 1.3 MP вайб
+            return base.resized(to: CGSize(width: 1280, height: 960))
+        case .n73:
+            // 3.2 MP камерофон получше
+            return base.resized(to: CGSize(width: 2048, height: 1536))
         }
     }
 
@@ -95,18 +108,26 @@ enum RetroFilter {
         case .vhs:
             return applyVHS(to: image)
         case .oldPhone:
-            return applyOldPhone(to: image)
+            return applyOldPhoneVGA(to: image)
+        case .nokia6230i:
+            return apply6230i(to: image)
+        case .n73:
+            return applyN73(to: image)
         }
     }
+
+    // MARK: - Мыльница
+    // Дешёвый бытовой цифровик: чуть тёплый, слегка контрастный,
+    // немного перешарпленный, без сильной деградации.
 
     private static func applyPointAndShoot(to image: CIImage) -> CIImage {
         let extent = image.extent
         var output = image
 
         output = output.applyingFilter("CIColorControls", parameters: [
-            kCIInputSaturationKey: 0.95,
-            kCIInputContrastKey: 1.08,
-            kCIInputBrightnessKey: -0.01
+            kCIInputSaturationKey: 1.00,
+            kCIInputContrastKey: 1.10,
+            kCIInputBrightnessKey: 0.01
         ])
 
         output = output.applyingFilter("CITemperatureAndTint", parameters: [
@@ -115,17 +136,17 @@ enum RetroFilter {
         ])
 
         output = output.applyingFilter("CISharpenLuminance", parameters: [
-            kCIInputSharpnessKey: 0.18
+            kCIInputSharpnessKey: 0.28
         ])
 
         output = output.applyingFilter("CIVignette", parameters: [
-            kCIInputIntensityKey: 0.45,
-            kCIInputRadiusKey: 1.2
+            kCIInputIntensityKey: 0.28,
+            kCIInputRadiusKey: 1.1
         ])
 
         if let noise = CIFilter(name: "CIRandomGenerator")?.outputImage?.cropped(to: extent) {
             let grain = noise.applyingFilter("CIColorMatrix", parameters: [
-                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0.025)
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0.018)
             ])
             output = grain.applyingFilter("CISoftLightBlendMode", parameters: [
                 kCIInputBackgroundImageKey: output
@@ -135,28 +156,124 @@ enum RetroFilter {
         return output
     }
 
+    // MARK: - VHS / Digital8 / Handycam
+    // Мягко, грязновато, менее насыщенно, немного "плывёт".
+
     private static func applyVHS(to image: CIImage) -> CIImage {
         let extent = image.extent
         var output = image
 
         output = output.applyingFilter("CIColorControls", parameters: [
-            kCIInputSaturationKey: 0.55,
-            kCIInputContrastKey: 1.02,
-            kCIInputBrightnessKey: -0.04
+            kCIInputSaturationKey: 0.58,
+            kCIInputContrastKey: 0.98,
+            kCIInputBrightnessKey: -0.03
         ])
 
         output = output.applyingFilter("CIHueAdjust", parameters: [
-            kCIInputAngleKey: 0.04
+            kCIInputAngleKey: 0.035
         ])
 
         output = output.applyingFilter("CIGaussianBlur", parameters: [
-            kCIInputRadiusKey: 0.9
+            kCIInputRadiusKey: 1.15
         ]).cropped(to: extent)
 
         output = output.applyingFilter("CIBloom", parameters: [
-            kCIInputRadiusKey: 2.0,
-            kCIInputIntensityKey: 0.3
+            kCIInputRadiusKey: 2.4,
+            kCIInputIntensityKey: 0.28
         ]).cropped(to: extent)
+
+        if let noise = CIFilter(name: "CIRandomGenerator")?.outputImage?.cropped(to: extent) {
+            let grain = noise.applyingFilter("CIColorMatrix", parameters: [
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0.045)
+            ])
+            output = grain.applyingFilter("CIOverlayBlendMode", parameters: [
+                kCIInputBackgroundImageKey: output
+            ]).cropped(to: extent)
+        }
+
+        return output
+    }
+
+    // MARK: - Nokia VGA / 0.3 MP
+    // Главный пресет кнопочных телефонов: сильно убитая детализация,
+    // грубый JPEG, бедные цвета, полосы/шум/цветение.
+
+    private static func applyOldPhoneVGA(to image: CIImage) -> CIImage {
+        let extent = image.extent
+        var output = image
+
+        // Сильная потеря деталей
+        let downscaled = output.applyingFilter("CILanczosScaleTransform", parameters: [
+            "inputScale": 0.16,
+            "inputAspectRatio": 1.0
+        ])
+
+        output = downscaled.applyingFilter("CILanczosScaleTransform", parameters: [
+            "inputScale": 6.25,
+            "inputAspectRatio": 1.0
+        ]).cropped(to: extent)
+
+        output = output.applyingFilter("CIColorControls", parameters: [
+            kCIInputSaturationKey: 0.40,
+            kCIInputContrastKey: 1.22,
+            kCIInputBrightnessKey: -0.04
+        ])
+
+        output = output.applyingFilter("CIColorPosterize", parameters: [
+            "inputLevels": 9.0
+        ])
+
+        output = output.applyingFilter("CISharpenLuminance", parameters: [
+            kCIInputSharpnessKey: 0.32
+        ])
+
+        output = output.applyingFilter("CIBloom", parameters: [
+            kCIInputRadiusKey: 1.3,
+            kCIInputIntensityKey: 0.18
+        ]).cropped(to: extent)
+
+        if let noise = CIFilter(name: "CIRandomGenerator")?.outputImage?.cropped(to: extent) {
+            let grain = noise.applyingFilter("CIColorMatrix", parameters: [
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0.075)
+            ])
+            output = grain.applyingFilter("CIHardLightBlendMode", parameters: [
+                kCIInputBackgroundImageKey: output
+            ]).cropped(to: extent)
+        }
+
+        return output
+    }
+
+    // MARK: - Nokia 6230i / 1.3 MP
+    // Уже лучше VGA, но всё ещё телефонный и грубоватый.
+
+    private static func apply6230i(to image: CIImage) -> CIImage {
+        let extent = image.extent
+        var output = image
+
+        let downscaled = output.applyingFilter("CILanczosScaleTransform", parameters: [
+            "inputScale": 0.36,
+            "inputAspectRatio": 1.0
+        ])
+
+        output = downscaled.applyingFilter("CILanczosScaleTransform", parameters: [
+            "inputScale": 2.78,
+            "inputAspectRatio": 1.0
+        ]).cropped(to: extent)
+
+        output = output.applyingFilter("CIColorControls", parameters: [
+            kCIInputSaturationKey: 0.65,
+            kCIInputContrastKey: 1.14,
+            kCIInputBrightnessKey: -0.02
+        ])
+
+        output = output.applyingFilter("CIColorPosterize", parameters: [
+            "inputLevels": 14.0
+        ])
+
+        output = output.applyingFilter("CISharpenLuminance", parameters: [
+            kCIInputSharpnessKey: 0.25
+        ])
 
         if let noise = CIFilter(name: "CIRandomGenerator")?.outputImage?.cropped(to: extent) {
             let grain = noise.applyingFilter("CIColorMatrix", parameters: [
@@ -170,43 +287,33 @@ enum RetroFilter {
         return output
     }
 
-    private static func applyOldPhone(to image: CIImage) -> CIImage {
+    // MARK: - Nokia N73 / 3.2 MP
+    // Уже "камерофон получше": больше деталей, но всё равно старый мобильный вайб.
+
+    private static func applyN73(to image: CIImage) -> CIImage {
         let extent = image.extent
         var output = image
 
-        let downscaled = output.applyingFilter("CILanczosScaleTransform", parameters: [
-            "inputScale": 0.18,
-            "inputAspectRatio": 1.0
-        ])
-
-        output = downscaled.applyingFilter("CILanczosScaleTransform", parameters: [
-            "inputScale": 5.55,
-            "inputAspectRatio": 1.0
-        ]).cropped(to: extent)
-
         output = output.applyingFilter("CIColorControls", parameters: [
-            kCIInputSaturationKey: 0.35,
-            kCIInputContrastKey: 1.28,
-            kCIInputBrightnessKey: -0.05
-        ])
-
-        output = output.applyingFilter("CIColorPosterize", parameters: [
-            "inputLevels": 10.0
+            kCIInputSaturationKey: 0.82,
+            kCIInputContrastKey: 1.10,
+            kCIInputBrightnessKey: -0.01
         ])
 
         output = output.applyingFilter("CISharpenLuminance", parameters: [
-            kCIInputSharpnessKey: 0.45
+            kCIInputSharpnessKey: 0.22
         ])
 
-        output = output.applyingFilter("CIGaussianBlur", parameters: [
-            kCIInputRadiusKey: 0.25
-        ]).cropped(to: extent)
+        output = output.applyingFilter("CIVignette", parameters: [
+            kCIInputIntensityKey: 0.18,
+            kCIInputRadiusKey: 1.0
+        ])
 
         if let noise = CIFilter(name: "CIRandomGenerator")?.outputImage?.cropped(to: extent) {
             let grain = noise.applyingFilter("CIColorMatrix", parameters: [
-                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0.08)
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0.03)
             ])
-            output = grain.applyingFilter("CIHardLightBlendMode", parameters: [
+            output = grain.applyingFilter("CISoftLightBlendMode", parameters: [
                 kCIInputBackgroundImageKey: output
             ]).cropped(to: extent)
         }
