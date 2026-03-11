@@ -26,11 +26,13 @@ final class CameraService: NSObject, ObservableObject {
     private var isConfigured = false
     private var currentPosition: AVCaptureDevice.Position = .back
     private var hasPhotoAccess = false
+    private var hasMicrophoneAccess = false
     private var lastPreviewTimestamp: CFTimeInterval = 0
 
     override init() {
         super.init()
         requestPhotoPermission()
+        requestMicrophonePermission()
     }
 
     func startIfNeeded() {
