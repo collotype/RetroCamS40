@@ -7,10 +7,23 @@ import CoreMedia
 import QuartzCore
 
 final class CameraService: NSObject, ObservableObject {
+    enum CaptureMode: String, CaseIterable, Identifiable {
+        case photo
+        case video
+
+        var id: String { rawValue }
+    }
+
+    // MARK: - Legacy-compatible published state
+
     @Published var isRecording: Bool = false
     @Published var useRetroFilter: Bool = true
     @Published var addDateStamp: Bool = false
-    @Published var selectedPreset: RetroPreset = .oldPhone
+    @Published var selectedPreset: RetroPreset = .oldPhone {
+        didSet {
+            syncSettingsFromPreset()
+        }
+    }
     @Published var previewImage: UIImage?
     @Published var selectedPreviewFPS: Int = 30
     @Published var captureAspect: CaptureAspect = .fourThree
@@ -22,6 +35,14 @@ final class CameraService: NSObject, ObservableObject {
     @Published var manualISOValue: Float = 0.2
     @Published var manualShutterValue: Float = 0.15
 
+    // MARK: - New UI-facing state
+
+    @Published var captureMode: CaptureMode = .photo
+    @Published var recordingDuration: TimeInterval = 0
+    @Published var selectedImageQuality: RetroImageQuality = RetroFilter.profile(for: .oldPhone).imageQuality
+    @Published var selectedImageSize: RetroImageSize = RetroFilter.profile(for: .oldPhone).imageSize
+    @Published var selectedProcessorMode: RetroProcessorMode = RetroFilter.profile(for: .oldPhone).processorMode
+
     let session = AVCaptureSession()
 
     private let sessionQueue = DispatchQueue(label: "retrocam.session.queue")
@@ -32,31 +53,29 @@ final class CameraService: NSObject, ObservableObject {
 
     private var videoInput: AVCaptureDeviceInput?
     private var audioInput: AVCaptureDeviceInput?
-
     private var isConfigured = false
     private var currentPosition: AVCaptureDevice.Position = .back
-
     private var hasPhotoAccess = false
     private var hasMicrophoneAccess = false
-
     private var lastPreviewTimestamp: CFTimeInterval = 0
     private let previewThrottleQueue = DispatchQueue(label: "retrocam.preview.queue")
+    private var recordingTimer: Timer?
+    private var recordingStartedAt: Date?
 
     override init() {
         super.init()
         requestPhotoPermission()
         requestMicrophonePermission()
+        syncSettingsFromPreset()
     }
 
     // MARK: - Public control
 
     func startIfNeeded() {
         let status = AVCaptureDevice.authorizationStatus(for: .video)
-
         switch status {
         case .authorized:
             startSession()
-
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 guard let self else { return }
@@ -64,22 +83,22 @@ final class CameraService: NSObject, ObservableObject {
                     self.startSession()
                 }
             }
-
         default:
             break
         }
     }
 
     func stop() {
+        stopRecordingTimer()
         sessionQueue.async { [weak self] in
             guard let self else { return }
-
             if self.session.isRunning {
                 self.session.stopRunning()
             }
-
             DispatchQueue.main.async {
                 self.previewImage = nil
+                self.isRecording = false
+                self.recordingDuration = 0
             }
         }
     }
@@ -92,7 +111,6 @@ final class CameraService: NSObject, ObservableObject {
 
             self.session.beginConfiguration()
             self.session.removeInput(currentInput)
-
             self.currentPosition = (self.currentPosition == .back) ? .front : .back
 
             do {
@@ -109,6 +127,7 @@ final class CameraService: NSObject, ObservableObject {
                 }
 
                 self.configureConnections()
+                self.applySessionPresetFromCurrentSettings()
                 self.applyCurrentDeviceSettings()
             } catch {
                 self.session.addInput(currentInput)
@@ -124,17 +143,15 @@ final class CameraService: NSObject, ObservableObject {
         sessionQueue.async { [weak self] in
             guard let self else { return }
             guard self.isConfigured else { return }
+            guard !self.movieOutput.isRecording else { return }
 
             let settings = AVCapturePhotoSettings()
-
             if let device = self.activeVideoDevice, device.hasFlash {
                 settings.flashMode = self.avFlashMode
             }
-
             settings.isHighResolutionPhotoEnabled = false
 
-            if let connection = self.photoOutput.connection(with: .video),
-               connection.isVideoOrientationSupported {
+            if let connection = self.photoOutput.connection(with: .video), connection.isVideoOrientationSupported {
                 connection.videoOrientation = .portrait
                 if connection.isVideoMirroringSupported {
                     connection.isVideoMirrored = (self.currentPosition == .front)
@@ -158,10 +175,8 @@ final class CameraService: NSObject, ObservableObject {
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("retrocam_\(UUID().uuidString).mov")
 
-            if let connection = self.movieOutput.connection(with: .video),
-               connection.isVideoOrientationSupported {
+            if let connection = self.movieOutput.connection(with: .video), connection.isVideoOrientationSupported {
                 connection.videoOrientation = .portrait
-
                 if connection.isVideoMirroringSupported {
                     connection.isVideoMirrored = (self.currentPosition == .front)
                 }
@@ -171,15 +186,35 @@ final class CameraService: NSObject, ObservableObject {
         }
     }
 
+    func performPrimaryAction() {
+        switch captureMode {
+        case .photo:
+            takePhoto()
+        case .video:
+            toggleRecording()
+        }
+    }
+
+    func updateCaptureMode(_ mode: CaptureMode) {
+        DispatchQueue.main.async {
+            self.captureMode = mode
+        }
+        sessionQueue.async { [weak self] in
+            self?.applySessionPresetFromCurrentSettings()
+        }
+    }
+
+    func toggleCaptureMode() {
+        updateCaptureMode(captureMode == .photo ? .video : .photo)
+    }
+
     // MARK: - Setting updates
 
     func updatePreviewFPS(_ fps: Int) {
-        let safe = [24, 30, 60].contains(fps) ? fps : 30
-
+        let safe = [15, 20, 24, 25, 30, 60].contains(fps) ? fps : 30
         DispatchQueue.main.async {
             self.selectedPreviewFPS = safe
         }
-
         sessionQueue.async { [weak self] in
             self?.applyFrameRate()
         }
@@ -201,7 +236,6 @@ final class CameraService: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.zoomFactor = zoom
         }
-
         sessionQueue.async { [weak self] in
             self?.applyZoom()
         }
@@ -211,7 +245,6 @@ final class CameraService: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.manualFocusEnabled = enabled
         }
-
         sessionQueue.async { [weak self] in
             self?.applyFocus()
         }
@@ -219,11 +252,9 @@ final class CameraService: NSObject, ObservableObject {
 
     func updateFocusPosition(_ value: Float) {
         let clamped = min(max(value, 0), 1)
-
         DispatchQueue.main.async {
             self.focusPosition = clamped
         }
-
         sessionQueue.async { [weak self] in
             self?.applyFocus()
         }
@@ -233,7 +264,6 @@ final class CameraService: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.manualExposureEnabled = enabled
         }
-
         sessionQueue.async { [weak self] in
             self?.applyExposure()
         }
@@ -241,11 +271,9 @@ final class CameraService: NSObject, ObservableObject {
 
     func updateManualISOValue(_ value: Float) {
         let clamped = min(max(value, 0), 1)
-
         DispatchQueue.main.async {
             self.manualISOValue = clamped
         }
-
         sessionQueue.async { [weak self] in
             self?.applyExposure()
         }
@@ -253,13 +281,42 @@ final class CameraService: NSObject, ObservableObject {
 
     func updateManualShutterValue(_ value: Float) {
         let clamped = min(max(value, 0), 1)
-
         DispatchQueue.main.async {
             self.manualShutterValue = clamped
         }
-
         sessionQueue.async { [weak self] in
             self?.applyExposure()
+        }
+    }
+
+    func updatePreset(_ preset: RetroPreset) {
+        DispatchQueue.main.async {
+            self.selectedPreset = preset
+        }
+        sessionQueue.async { [weak self] in
+            self?.applySessionPresetFromCurrentSettings()
+            self?.applyFrameRate()
+        }
+    }
+
+    func updateImageQuality(_ quality: RetroImageQuality) {
+        DispatchQueue.main.async {
+            self.selectedImageQuality = quality
+        }
+    }
+
+    func updateImageSize(_ size: RetroImageSize) {
+        DispatchQueue.main.async {
+            self.selectedImageSize = size
+        }
+        sessionQueue.async { [weak self] in
+            self?.applySessionPresetFromCurrentSettings()
+        }
+    }
+
+    func updateProcessorMode(_ mode: RetroProcessorMode) {
+        DispatchQueue.main.async {
+            self.selectedProcessorMode = mode
         }
     }
 
@@ -268,15 +325,12 @@ final class CameraService: NSObject, ObservableObject {
     private func startSession() {
         sessionQueue.async { [weak self] in
             guard let self else { return }
-
             if !self.isConfigured {
                 self.configureSession()
             }
-
             if self.isConfigured && !self.session.isRunning {
                 self.session.startRunning()
             }
-
             self.applyCurrentDeviceSettings()
         }
     }
@@ -285,12 +339,11 @@ final class CameraService: NSObject, ObservableObject {
         guard !isConfigured else { return }
 
         session.beginConfiguration()
-        session.sessionPreset = .high
+        applySessionPresetFromCurrentSettings()
 
         do {
             let camera = try makeCamera(position: currentPosition)
             let input = try AVCaptureDeviceInput(device: camera)
-
             if session.canAddInput(input) {
                 session.addInput(input)
                 videoInput = input
@@ -317,7 +370,6 @@ final class CameraService: NSObject, ObservableObject {
                 kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
             ]
             videoDataOutput.alwaysDiscardsLateVideoFrames = true
-
             if session.canAddOutput(videoDataOutput) {
                 session.addOutput(videoDataOutput)
                 videoDataOutput.setSampleBufferDelegate(self, queue: previewThrottleQueue)
@@ -325,7 +377,6 @@ final class CameraService: NSObject, ObservableObject {
 
             configureConnections()
             session.commitConfiguration()
-
             isConfigured = true
         } catch {
             session.commitConfiguration()
@@ -362,15 +413,29 @@ final class CameraService: NSObject, ObservableObject {
         }
     }
 
+    private func applySessionPresetFromCurrentSettings() {
+        let desiredPreset: AVCaptureSession.Preset
+        switch selectedImageSize {
+        case .vga640x480:
+            desiredPreset = .vga640x480
+        case .sxga1280x960, .uxga1600x1200:
+            desiredPreset = .photo
+        }
+
+        if session.canSetSessionPreset(desiredPreset) {
+            session.sessionPreset = desiredPreset
+        } else if session.canSetSessionPreset(.high) {
+            session.sessionPreset = .high
+        }
+    }
+
     private func makeCamera(position: AVCaptureDevice.Position) throws -> AVCaptureDevice {
         if let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) {
             return device
         }
-
         if let fallback = AVCaptureDevice.default(for: .video) {
             return fallback
         }
-
         throw NSError(
             domain: "RetroCam",
             code: -1,
@@ -382,17 +447,14 @@ final class CameraService: NSObject, ObservableObject {
 
     private func requestPhotoPermission() {
         let status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
-
         switch status {
         case .authorized, .limited:
             hasPhotoAccess = true
-
         case .notDetermined:
             PHPhotoLibrary.requestAuthorization(for: .addOnly) { [weak self] newStatus in
                 guard let self else { return }
                 self.hasPhotoAccess = (newStatus == .authorized || newStatus == .limited)
             }
-
         default:
             hasPhotoAccess = false
         }
@@ -400,17 +462,14 @@ final class CameraService: NSObject, ObservableObject {
 
     private func requestMicrophonePermission() {
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
-
         switch status {
         case .authorized:
             hasMicrophoneAccess = true
-
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
                 guard let self else { return }
                 self.hasMicrophoneAccess = granted
             }
-
         default:
             hasMicrophoneAccess = false
         }
@@ -424,9 +483,12 @@ final class CameraService: NSObject, ObservableObject {
 
     private var avFlashMode: AVCaptureDevice.FlashMode {
         switch photoFlashMode {
-        case .off: return .off
-        case .auto: return .auto
-        case .on: return .on
+        case .off:
+            return .off
+        case .auto:
+            return .auto
+        case .on:
+            return .on
         }
     }
 
@@ -440,16 +502,18 @@ final class CameraService: NSObject, ObservableObject {
     private func applyFrameRate() {
         guard let device = activeVideoDevice else { return }
 
-        let fps = Double(selectedPreviewFPS)
+        let derived = previewFPSForCurrentProfile()
+        let desired = selectedPreviewFPS > 0 ? selectedPreviewFPS : derived
+        let fps = Double(desired)
+
         let supported = device.activeFormat.videoSupportedFrameRateRanges.contains {
             fps >= $0.minFrameRate && fps <= $0.maxFrameRate
         }
-
         guard supported else { return }
 
         do {
             try device.lockForConfiguration()
-            let duration = CMTime(value: 1, timescale: CMTimeScale(selectedPreviewFPS))
+            let duration = CMTime(value: 1, timescale: CMTimeScale(desired))
             device.activeVideoMinFrameDuration = duration
             device.activeVideoMaxFrameDuration = duration
             device.unlockForConfiguration()
@@ -459,10 +523,8 @@ final class CameraService: NSObject, ObservableObject {
 
     private func applyZoom() {
         guard let device = activeVideoDevice else { return }
-
         let maxZoom = min(device.activeFormat.videoMaxZoomFactor, 6.0)
         let value = min(max(zoomFactor, 1.0), maxZoom)
-
         do {
             try device.lockForConfiguration()
             device.videoZoomFactor = value
@@ -473,17 +535,13 @@ final class CameraService: NSObject, ObservableObject {
 
     private func applyFocus() {
         guard let device = activeVideoDevice else { return }
-
         do {
             try device.lockForConfiguration()
-
-            if manualFocusEnabled,
-               device.isLockingFocusWithCustomLensPositionSupported {
+            if manualFocusEnabled, device.isLockingFocusWithCustomLensPositionSupported {
                 device.setFocusModeLocked(lensPosition: focusPosition, completionHandler: nil)
             } else if device.isFocusModeSupported(.continuousAutoFocus) {
                 device.focusMode = .continuousAutoFocus
             }
-
             device.unlockForConfiguration()
         } catch {
         }
@@ -491,10 +549,8 @@ final class CameraService: NSObject, ObservableObject {
 
     private func applyExposure() {
         guard let device = activeVideoDevice else { return }
-
         do {
             try device.lockForConfiguration()
-
             if manualExposureEnabled, device.isExposureModeSupported(.custom) {
                 let minISO = device.activeFormat.minISO
                 let maxISO = device.activeFormat.maxISO
@@ -505,17 +561,75 @@ final class CameraService: NSObject, ObservableObject {
                     CMTimeGetSeconds(device.activeFormat.maxExposureDuration),
                     1.0 / 2.0
                 )
-
                 let seconds = minDurationSeconds + (maxDurationSeconds - minDurationSeconds) * Double(manualShutterValue)
                 let duration = CMTimeMakeWithSeconds(seconds, preferredTimescale: 1_000_000_000)
-
                 device.setExposureModeCustom(duration: duration, iso: iso, completionHandler: nil)
             } else if device.isExposureModeSupported(.continuousAutoExposure) {
                 device.exposureMode = .continuousAutoExposure
             }
-
             device.unlockForConfiguration()
         } catch {
+        }
+    }
+
+    // MARK: - Profile sync
+
+    private func syncSettingsFromPreset() {
+        let profile = RetroFilter.profile(for: selectedPreset)
+        let derivedFPS = previewFPSForPreset(selectedPreset)
+
+        DispatchQueue.main.async {
+            self.selectedImageQuality = profile.imageQuality
+            self.selectedImageSize = profile.imageSize
+            self.selectedProcessorMode = profile.processorMode
+            self.selectedPreviewFPS = derivedFPS
+        }
+
+        sessionQueue.async { [weak self] in
+            self?.applySessionPresetFromCurrentSettings()
+            self?.applyFrameRate()
+        }
+    }
+
+    private func previewFPSForCurrentProfile() -> Int {
+        previewFPSForPreset(selectedPreset)
+    }
+
+    private func previewFPSForPreset(_ preset: RetroPreset) -> Int {
+        switch preset {
+        case .oldPhone:
+            return 15
+        case .vhs:
+            return 25
+        case .pointAndShoot:
+            return 24
+        case .nokia6230i:
+            return 20
+        case .n73:
+            return 24
+        }
+    }
+
+    // MARK: - Recording timer
+
+    private func startRecordingTimer() {
+        DispatchQueue.main.async {
+            self.recordingStartedAt = Date()
+            self.recordingDuration = 0
+            self.recordingTimer?.invalidate()
+            self.recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+                guard let self, let started = self.recordingStartedAt else { return }
+                self.recordingDuration = Date().timeIntervalSince(started)
+            }
+        }
+    }
+
+    private func stopRecordingTimer() {
+        DispatchQueue.main.async {
+            self.recordingTimer?.invalidate()
+            self.recordingTimer = nil
+            self.recordingStartedAt = nil
+            self.recordingDuration = 0
         }
     }
 
@@ -523,7 +637,6 @@ final class CameraService: NSObject, ObservableObject {
 
     private func savePhotoToLibrary(_ data: Data) {
         guard hasPhotoAccess else { return }
-
         PHPhotoLibrary.shared().performChanges({
             let request = PHAssetCreationRequest.forAsset()
             let options = PHAssetResourceCreationOptions()
@@ -546,6 +659,12 @@ final class CameraService: NSObject, ObservableObject {
                 try? FileManager.default.removeItem(at: fileURL)
             }
         }
+    }
+
+    // MARK: - Final encode helpers
+
+    private func finalJPEGCompressionQuality() -> CGFloat {
+        selectedImageQuality.jpegCompression
     }
 }
 
@@ -577,7 +696,10 @@ extension CameraService: AVCapturePhotoCaptureDelegate {
             )
         }
 
-        guard let finalData = finalImage.jpegData(compressionQuality: 0.88) else { return }
+        guard let finalData = finalImage.jpegData(compressionQuality: finalJPEGCompressionQuality()) else {
+            return
+        }
+
         savePhotoToLibrary(finalData)
     }
 }
@@ -592,7 +714,6 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
     ) {
         let now = CACurrentMediaTime()
         let minInterval = 1.0 / Double(max(selectedPreviewFPS, 12))
-
         guard now - lastPreviewTimestamp >= minInterval else { return }
         lastPreviewTimestamp = now
 
@@ -601,7 +722,6 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
         }
 
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
 
         guard let image = RetroFilter.makePreviewImage(
@@ -609,7 +729,9 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
             preset: selectedPreset,
             useRetro: useRetroFilter,
             context: ciContext
-        ) else { return }
+        ) else {
+            return
+        }
 
         DispatchQueue.main.async { [weak self] in
             self?.previewImage = image
@@ -627,7 +749,9 @@ extension CameraService: AVCaptureFileOutputRecordingDelegate {
     ) {
         DispatchQueue.main.async {
             self.isRecording = true
+            self.captureMode = .video
         }
+        startRecordingTimer()
     }
 
     func fileOutput(
@@ -639,6 +763,7 @@ extension CameraService: AVCaptureFileOutputRecordingDelegate {
         DispatchQueue.main.async {
             self.isRecording = false
         }
+        stopRecordingTimer()
 
         guard error == nil else {
             try? FileManager.default.removeItem(at: outputFileURL)
@@ -646,14 +771,11 @@ extension CameraService: AVCaptureFileOutputRecordingDelegate {
         }
 
         let preset = selectedPreset
-
         VideoExporter.exportRetroVideo(inputURL: outputFileURL, preset: preset) { [weak self] result in
             guard let self else { return }
-
             switch result {
             case .success(let exportedURL):
                 self.saveVideoToLibrary(exportedURL, cleanupURLs: [outputFileURL, exportedURL])
-
             case .failure:
                 self.saveVideoToLibrary(outputFileURL, cleanupURLs: [outputFileURL])
             }
