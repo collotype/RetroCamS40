@@ -154,8 +154,23 @@ final class CameraService: NSObject, ObservableObject {
         }
     }
 
+    private func requestMicrophonePermission() {
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+
+        switch status {
+        case .authorized:
+            hasMicrophoneAccess = true
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                guard let self else { return }
+                self.hasMicrophoneAccess = granted
+            }
+        default:
+            hasMicrophoneAccess = false
+        }
+    }
+
     private func configureSession() {
-        guard !isConfigured else { return }
 
         session.beginConfiguration()
         session.sessionPreset = .photo
