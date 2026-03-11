@@ -38,8 +38,6 @@ struct ContentView: View {
         .onDisappear { camera.stop() }
     }
 
-    // MARK: - Top
-
     private var topStatusBar: some View {
         HStack(spacing: 10) {
             Text("0.3MP CAM")
@@ -75,8 +73,6 @@ struct ContentView: View {
                 .frame(height: 1)
         }
     }
-
-    // MARK: - Body
 
     private var mainPhoneArea: some View {
         GeometryReader { geo in
@@ -131,8 +127,6 @@ struct ContentView: View {
             settingsScreen
         }
     }
-
-    // MARK: - Camera
 
     private func cameraScreen(size: CGSize) -> some View {
         VStack(spacing: 12) {
@@ -284,7 +278,6 @@ struct ContentView: View {
                     }
                 } else {
                     retroValueTile(title: "Видео", value: camera.isRecording ? "REC" : "READY") {
-                        // без действия
                     }
                 }
             }
@@ -344,8 +337,6 @@ struct ContentView: View {
             }
         }
     }
-
-    // MARK: - Settings
 
     private var settingsScreen: some View {
         ScrollView {
@@ -530,8 +521,6 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Shared UI
-
     private func retroTabButton(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
@@ -626,8 +615,6 @@ struct ContentView: View {
         .foregroundStyle(.black)
     }
 
-    // MARK: - Bottom keys
-
     private var bottomSoftKeys: some View {
         HStack {
             Button {
@@ -681,8 +668,8 @@ struct ContentView: View {
         switch currentScreen {
         case .camera:
             return captureMode == .photo
-            ? "Снять"
-            : (camera.isRecording ? "Стоп" : "Rec")
+                ? "Снять"
+                : (camera.isRecording ? "Стоп" : "Rec")
         case .gallery:
             return "Открыть"
         case .editor:
@@ -716,8 +703,6 @@ struct ContentView: View {
             currentScreen = .camera
         }
     }
-
-    // MARK: - Small cyclers
 
     private func cycleFPS() {
         let values = [24, 30, 60]
