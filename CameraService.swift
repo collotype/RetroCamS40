@@ -17,10 +17,12 @@ final class CameraService: NSObject, ObservableObject {
 
     private let sessionQueue = DispatchQueue(label: "retrocam.session.queue")
     private let photoOutput = AVCapturePhotoOutput()
+    private let movieOutput = AVCaptureMovieFileOutput()
     private let videoDataOutput = AVCaptureVideoDataOutput()
     private let ciContext = CIContext(options: nil)
 
     private var videoInput: AVCaptureDeviceInput?
+    private var audioInput: AVCaptureDeviceInput?
     private var isConfigured = false
     private var currentPosition: AVCaptureDevice.Position = .back
     private var hasPhotoAccess = false
