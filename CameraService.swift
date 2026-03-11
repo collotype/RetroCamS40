@@ -184,8 +184,21 @@ final class CameraService: NSObject, ObservableObject {
                 videoInput = input
             }
 
+            if hasMicrophoneAccess,
+               let mic = AVCaptureDevice.default(for: .audio) {
+                let micInput = try AVCaptureDeviceInput(device: mic)
+                if session.canAddInput(micInput) {
+                    session.addInput(micInput)
+                    audioInput = micInput
+                }
+            }
+
             if session.canAddOutput(photoOutput) {
                 session.addOutput(photoOutput)
+            }
+
+            if session.canAddOutput(movieOutput) {
+                session.addOutput(movieOutput)
             }
 
             videoDataOutput.videoSettings = [
