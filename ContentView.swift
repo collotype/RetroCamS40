@@ -1,5 +1,7 @@
 import SwiftUI
 import AVFoundation
+import Photos
+import AVKit
 
 struct ContentView: View {
     enum Screen: String, CaseIterable {
@@ -111,7 +113,7 @@ struct ContentView: View {
                     cycleCaptureMode()
                 }
 
-                LegacyValueTile(title: "Профиль", value: selectedPresetShortTitle) {
+                LegacyValueTile(title: "Профиль", value: camera.selectedPreset.shortTitle) {
                     currentScreen = .cameraSelector
                 }
 
@@ -193,7 +195,7 @@ struct ContentView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                LegacyInfoBadge(title: "MODEL", value: selectedPresetTitle)
+                LegacyInfoBadge(title: "MODEL", value: camera.selectedPreset.title)
                 LegacyInfoBadge(title: "MODE", value: captureMode.rawValue)
                 LegacyInfoBadge(title: "FPS", value: "\(camera.selectedPreviewFPS)")
 
@@ -213,11 +215,11 @@ struct ContentView: View {
                 VStack(spacing: 10) {
                     ForEach(RetroPreset.allCases) { preset in
                         LegacyMenuRow(
-                            title: presetDisplayTitle(preset),
+                            title: preset.title,
                             subtitle: cameraProfileSubtitle(for: preset),
-                            isSelected: isPresetSelected(preset)
+                            isSelected: preset == camera.selectedPreset
                         ) {
-                            setSelectedPreset(preset)
+                            camera.selectedPreset = preset
                             currentScreen = .camera
                         }
                     }
@@ -227,19 +229,17 @@ struct ContentView: View {
     }
 
     private func cameraProfileSubtitle(for preset: RetroPreset) -> String {
-        switch presetDisplayTitle(preset) {
-        case let name where name.localizedCaseInsensitiveContains("VHS"):
+        switch preset {
+        case .pointAndShoot:
+            return "Мягкий цифровой компакт"
+        case .vhs:
             return "Размытая VHS-эстетика"
-        case let name where name.localizedCaseInsensitiveContains("N73"):
-            return "Более чистая 3.2MP картинка"
-        case let name where name.localizedCaseInsensitiveContains("6230"):
-            return "1.3MP с жёсткой обработкой"
-        case let name where name.localizedCaseInsensitiveContains("0.3"),
-             let name where name.localizedCaseInsensitiveContains("VGA"),
-             let name where name.localizedCaseInsensitiveContains("Phone"):
+        case .oldPhone:
             return "Главный режим 0.3MP"
-        default:
-            return "Ретро-профиль камеры"
+        case .nokia6230i:
+            return "1.3MP с жёсткой обработкой"
+        case .n73:
+            return "Более чистая 3.2MP картинка"
         }
     }
 
@@ -276,14 +276,14 @@ struct ContentView: View {
                                     cycleFlash()
                                 }
 
-                                LegacyValueTile(title: "Профиль", value: selectedPresetShortTitle) {
+                                LegacyValueTile(title: "Профиль", value: camera.selectedPreset.shortTitle) {
                                     currentScreen = .cameraSelector
                                 }
                             }
                         } else {
                             HStack(spacing: 8) {
                                 LegacyValueTile(title: "Видео", value: camera.isRecording ? "REC" : "READY") { }
-                                LegacyValueTile(title: "Профиль", value: selectedPresetShortTitle) {
+                                LegacyValueTile(title: "Профиль", value: camera.selectedPreset.shortTitle) {
                                     currentScreen = .cameraSelector
                                 }
                             }
@@ -562,22 +562,16 @@ struct ContentView: View {
             return captureMode == .photo
                 ? "Снять"
                 : (camera.isRecording ? "Стоп" : "Rec")
-
         case .cameraSelector:
             return "Выбрать"
-
         case .options:
             return "Камера"
-
         case .settings:
             return "Камера"
-
         case .gallery:
             return gallerySelectedAssetID == nil ? "Выбрать" : "Открыть"
-
         case .editor:
             return "Применить"
-
         case .themes:
             return "Выбрать"
         }
@@ -692,24 +686,838 @@ struct ContentView: View {
         let next = all[(index + 1) % all.count]
         camera.updateFlashMode(next)
     }
-
-private var selectedPresetTitle: String {
-    camera.selectedPreset.title
 }
 
-private var selectedPresetShortTitle: String {
-    camera.selectedPreset.shortTitle
+enum LegacyPalette {
+    static let shellOuter = Color.black
+    static let shellInner = Color(red: 0.77, green: 0.83, blue: 0.71)
+    static let panel = Color(red: 0.87, green: 0.91, blue: 0.82)
+    static let panelAlt = Color(red: 0.80, green: 0.86, blue: 0.74)
+    static let ink = Color.black
+    static let soft = Color.black.opacity(0.08)
+    static let softStrong = Color.black.opacity(0.14)
+    static let active = Color.black
+    static let activeText = Color.white
+    static let previewBadge = Color(red: 0.80, green: 0.90, blue: 0.78)
 }
 
-private func presetDisplayTitle(_ preset: RetroPreset) -> String {
-    preset.title
+struct LegacyShell<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        ZStack {
+            LegacyPalette.shellOuter.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                content
+            }
+            .background(LegacyPalette.shellInner)
+        }
+    }
 }
 
-private func isPresetSelected(_ preset: RetroPreset) -> Bool {
-    preset == camera.selectedPreset
+struct LegacyHeaderBar: View {
+    let title: String
+    let status: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("0.3MP CAM")
+                .font(.system(size: 14, weight: .bold, design: .monospaced))
+
+            Spacer()
+
+            Text(title.uppercased())
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .lineLimit(1)
+
+            Spacer()
+
+            Text(status)
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+        }
+        .foregroundStyle(LegacyPalette.ink)
+        .padding(.horizontal, 12)
+        .frame(height: 34)
+        .background(
+            LinearGradient(
+                colors: [LegacyPalette.panel, LegacyPalette.panelAlt],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.black.opacity(0.15))
+                .frame(height: 1)
+        }
+    }
 }
 
-private func setSelectedPreset(_ preset: RetroPreset) {
-    camera.selectedPreset = preset
+struct LegacyScreenPanel<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        GeometryReader { _ in
+            ZStack {
+                LegacyPalette.shellInner
+
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(LegacyPalette.panel)
+                    .padding(12)
+
+                content
+                    .padding(20)
+            }
+        }
+    }
 }
+
+struct LegacySectionTitle: View {
+    let title: String
+
+    var body: some View {
+        Text(title.uppercased())
+            .font(.system(size: 12, weight: .heavy, design: .monospaced))
+            .foregroundStyle(LegacyPalette.ink.opacity(0.78))
+    }
+}
+
+struct LegacyCard<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content
+        }
+        .padding(12)
+        .background(LegacyPalette.soft)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .tint(.black)
+    }
+}
+
+struct LegacyMenuRow: View {
+    let title: String
+    let subtitle: String?
+    let isSelected: Bool
+    let action: () -> Void
+
+    init(
+        title: String,
+        subtitle: String? = nil,
+        isSelected: Bool = false,
+        action: @escaping () -> Void
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.isSelected = isSelected
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .bold))
+
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(isSelected ? .white.opacity(0.85) : .black.opacity(0.65))
+                    }
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .background(isSelected ? LegacyPalette.active : LegacyPalette.soft)
+            .foregroundStyle(isSelected ? LegacyPalette.activeText : LegacyPalette.ink)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct LegacyValueTile: View {
+    let title: String
+    let value: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Text(title)
+                    .font(.system(size: 11, weight: .bold))
+                Text(value)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(LegacyPalette.soft)
+            .foregroundStyle(LegacyPalette.ink)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct LegacyToggleTile: View {
+    let title: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Button {
+            isOn.toggle()
+        } label: {
+            VStack(spacing: 4) {
+                Text(title)
+                    .font(.system(size: 12, weight: .bold))
+                Text(isOn ? "ON" : "OFF")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(isOn ? LegacyPalette.active : LegacyPalette.soft)
+            .foregroundStyle(isOn ? LegacyPalette.activeText : LegacyPalette.ink)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct LegacyInfoBadge: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+            Text(value)
+                .font(.system(size: 10, weight: .regular, design: .monospaced))
+                .lineLimit(1)
+        }
+        .foregroundStyle(LegacyPalette.previewBadge)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Color.black.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+}
+
+struct LegacySoftKeyBar: View {
+    let leftTitle: String
+    let centerTitle: String
+    let rightTitle: String
+    let leftAction: () -> Void
+    let centerAction: () -> Void
+    let rightAction: () -> Void
+
+    var body: some View {
+        HStack {
+            Button(action: leftAction) {
+                Text(leftTitle)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+
+            Spacer()
+
+            Button(action: centerAction) {
+                Text(centerTitle)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+
+            Spacer()
+
+            Button(action: rightAction) {
+                Text(rightTitle)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+        }
+        .padding(.horizontal, 18)
+        .frame(height: 44)
+        .background(Color.black)
+    }
+}
+
+struct LegacyGalleryScreen: View {
+    @Binding var selectedAssetID: String?
+    @Binding var presentViewer: Bool
+
+    @StateObject private var model = LegacyGalleryViewModel()
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8)
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            LegacySectionTitle(title: "Галерея")
+
+            LegacyCard {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(headerTitle)
+                            .font(.system(size: 15, weight: .bold))
+
+                        Text(headerSubtitle)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.black.opacity(0.68))
+                    }
+
+                    Spacer()
+
+                    Button {
+                        model.reloadAssets()
+                    } label: {
+                        Text("Обновить")
+                            .font(.system(size: 12, weight: .bold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(LegacyPalette.softStrong)
+                            .foregroundStyle(LegacyPalette.ink)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            content
+        }
+        .onAppear {
+            model.requestAccessIfNeeded()
+        }
+        .onChange(of: model.assets) { assets in
+            guard !assets.isEmpty else {
+                selectedAssetID = nil
+                return
+            }
+
+            if let selectedAssetID,
+               assets.contains(where: { $0.localIdentifier == selectedAssetID }) {
+                return
+            }
+
+            self.selectedAssetID = assets.first?.localIdentifier
+        }
+        .sheet(isPresented: $presentViewer) {
+            if let asset = model.asset(for: selectedAssetID) {
+                LegacyAssetViewer(asset: asset)
+            }
+        }
+    }
+
+    private var headerTitle: String {
+        switch model.accessState {
+        case .idle, .loading:
+            return "Загрузка галереи"
+        case .denied:
+            return "Нет доступа к медиатеке"
+        case .authorized, .limited:
+            return "Медиафайлов: \(model.assets.count)"
+        }
+    }
+
+    private var headerSubtitle: String {
+        switch model.accessState {
+        case .idle, .loading:
+            return "Проверяем разрешение и загружаем последние фото и видео"
+        case .denied:
+            return "Добавь разрешение на чтение Photo Library в настройках iOS"
+        case .limited:
+            return selectedAssetID == nil
+                ? "Ограниченный доступ, файл не выбран"
+                : "Ограниченный доступ, выбран 1 файл"
+        case .authorized:
+            return selectedAssetID == nil
+                ? "Ничего не выбрано"
+                : "Файл выбран, можно открыть просмотр"
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch model.accessState {
+        case .idle, .loading:
+            VStack(spacing: 16) {
+                Spacer()
+
+                ProgressView()
+                    .tint(.black)
+
+                Text("Читаем медиатеку...")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.black.opacity(0.8))
+
+                Spacer()
+            }
+
+        case .denied:
+            LegacyCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Доступ к галерее выключен.")
+                        .font(.system(size: 16, weight: .bold))
+
+                    Text("Проверь разрешение Photo Library и строку доступа в Info.plist.")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.black.opacity(0.75))
+
+                    Button {
+                        model.requestAccessIfNeeded(forcePrompt: true)
+                    } label: {
+                        Text("Повторить запрос")
+                            .font(.system(size: 14, weight: .bold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.black)
+                            .foregroundStyle(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+        case .authorized, .limited:
+            if model.assets.isEmpty {
+                LegacyCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Пока пусто")
+                            .font(.system(size: 16, weight: .bold))
+
+                        Text("Сделай фото или видео, затем вернись сюда.")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.black.opacity(0.75))
+                    }
+                }
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 8) {
+                        ForEach(model.assets, id: \.localIdentifier) { asset in
+                            LegacyGalleryTile(
+                                model: model,
+                                asset: asset,
+                                isSelected: selectedAssetID == asset.localIdentifier
+                            ) {
+                                selectedAssetID = asset.localIdentifier
+                            } openAction: {
+                                selectedAssetID = asset.localIdentifier
+                                presentViewer = true
+                            }
+                        }
+                    }
+                    .padding(.bottom, 4)
+                }
+            }
+        }
+    }
+}
+
+@MainActor
+final class LegacyGalleryViewModel: ObservableObject {
+    enum AccessState {
+        case idle
+        case loading
+        case denied
+        case limited
+        case authorized
+    }
+
+    @Published var accessState: AccessState = .idle
+    @Published var assets: [PHAsset] = []
+
+    private let imageManager = PHCachingImageManager()
+
+    func requestAccessIfNeeded(forcePrompt: Bool = false) {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+
+        switch status {
+        case .authorized:
+            accessState = .authorized
+            reloadAssets()
+
+        case .limited:
+            accessState = .limited
+            reloadAssets()
+
+        case .notDetermined:
+            requestAuthorization()
+
+        case .denied, .restricted:
+            accessState = .denied
+            if forcePrompt {
+                requestAuthorization()
+            }
+
+        @unknown default:
+            accessState = .denied
+        }
+    }
+
+    func reloadAssets() {
+        accessState = currentResolvedAccessState()
+        assets = fetchAssets()
+    }
+
+    func asset(for localIdentifier: String?) -> PHAsset? {
+        guard let localIdentifier else { return nil }
+        return assets.first(where: { $0.localIdentifier == localIdentifier })
+    }
+
+    func requestThumbnail(
+        for asset: PHAsset,
+        targetSize: CGSize,
+        completion: @escaping (UIImage?) -> Void
+    ) {
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .opportunistic
+        options.resizeMode = .fast
+        options.isNetworkAccessAllowed = true
+
+        imageManager.requestImage(
+            for: asset,
+            targetSize: targetSize,
+            contentMode: .aspectFill,
+            options: options
+        ) { image, _ in
+            DispatchQueue.main.async {
+                completion(image)
+            }
+        }
+    }
+
+    func requestFullImage(
+        for asset: PHAsset,
+        completion: @escaping (UIImage?) -> Void
+    ) {
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.resizeMode = .none
+        options.isNetworkAccessAllowed = true
+
+        imageManager.requestImage(
+            for: asset,
+            targetSize: PHImageManagerMaximumSize,
+            contentMode: .aspectFit,
+            options: options
+        ) { image, _ in
+            DispatchQueue.main.async {
+                completion(image)
+            }
+        }
+    }
+
+    func requestPlayer(
+        for asset: PHAsset,
+        completion: @escaping (AVPlayer?) -> Void
+    ) {
+        let options = PHVideoRequestOptions()
+        options.deliveryMode = .automatic
+        options.isNetworkAccessAllowed = true
+
+        imageManager.requestPlayerItem(forVideo: asset, options: options) { item, _ in
+            let player = item.map { AVPlayer(playerItem: $0) }
+            DispatchQueue.main.async {
+                completion(player)
+            }
+        }
+    }
+
+    private func requestAuthorization() {
+        accessState = .loading
+
+        PHPhotoLibrary.requestAuthorization(for: .readWrite) { [weak self] status in
+            Task { @MainActor in
+                guard let self else { return }
+
+                switch status {
+                case .authorized:
+                    self.accessState = .authorized
+                    self.reloadAssets()
+
+                case .limited:
+                    self.accessState = .limited
+                    self.reloadAssets()
+
+                case .denied, .restricted:
+                    self.accessState = .denied
+                    self.assets = []
+
+                case .notDetermined:
+                    self.accessState = .idle
+                    self.assets = []
+
+                @unknown default:
+                    self.accessState = .denied
+                    self.assets = []
+                }
+            }
+        }
+    }
+
+    private func currentResolvedAccessState() -> AccessState {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+
+        switch status {
+        case .authorized:
+            return .authorized
+        case .limited:
+            return .limited
+        case .denied, .restricted:
+            return .denied
+        case .notDetermined:
+            return .idle
+        @unknown default:
+            return .denied
+        }
+    }
+
+    private func fetchAssets() -> [PHAsset] {
+        let options = PHFetchOptions()
+        options.sortDescriptors = [
+            NSSortDescriptor(key: "creationDate", ascending: false)
+        ]
+
+        let result = PHAsset.fetchAssets(with: options)
+        var items: [PHAsset] = []
+        items.reserveCapacity(result.count)
+
+        result.enumerateObjects { asset, _, _ in
+            guard asset.mediaType == .image || asset.mediaType == .video else { return }
+            items.append(asset)
+        }
+
+        return items
+    }
+}
+
+struct LegacyGalleryTile: View {
+    @ObservedObject var model: LegacyGalleryViewModel
+
+    let asset: PHAsset
+    let isSelected: Bool
+    let selectAction: () -> Void
+    let openAction: () -> Void
+
+    @State private var thumbnail: UIImage?
+
+    var body: some View {
+        Button {
+            selectAction()
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                ZStack(alignment: .bottomLeading) {
+                    Rectangle()
+                        .fill(LegacyPalette.softStrong)
+
+                    if let thumbnail {
+                        Image(uiImage: thumbnail)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .clipped()
+                    } else {
+                        ProgressView()
+                            .tint(.black)
+                    }
+
+                    HStack(spacing: 4) {
+                        if asset.mediaType == .video {
+                            Image(systemName: "video.fill")
+                                .font(.system(size: 10, weight: .bold))
+                        } else {
+                            Image(systemName: "photo.fill")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+
+                        Text(assetLabel)
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .background(Color.black.opacity(0.72))
+                    .foregroundStyle(LegacyPalette.previewBadge)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .padding(6)
+                }
+
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
+                        .shadow(radius: 2)
+                        .padding(6)
+                }
+            }
+            .aspectRatio(1, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(isSelected ? Color.black : Color.black.opacity(0.15), lineWidth: isSelected ? 3 : 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded {
+                openAction()
+            }
+        )
+        .onAppear {
+            loadThumbnail()
+        }
+    }
+
+    private var assetLabel: String {
+        if asset.mediaType == .video {
+            let total = Int(round(asset.duration))
+            let minutes = total / 60
+            let seconds = total % 60
+            return String(format: "%02d:%02d", minutes, seconds)
+        } else {
+            return "\(asset.pixelWidth)x\(asset.pixelHeight)"
+        }
+    }
+
+    private func loadThumbnail() {
+        let size = CGSize(width: 300, height: 300)
+        model.requestThumbnail(for: asset, targetSize: size) { image in
+            self.thumbnail = image
+        }
+    }
+}
+
+struct LegacyAssetViewer: View {
+    let asset: PHAsset
+
+    @Environment(\.dismiss) private var dismiss
+
+    @StateObject private var model = LegacyGalleryViewModel()
+    @State private var image: UIImage?
+    @State private var player: AVPlayer?
+    @State private var isLoading = true
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                HStack {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Text("Назад")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+
+                    Spacer()
+
+                    Text(asset.mediaType == .video ? "ВИДЕО" : "ФОТО")
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white)
+
+                    Spacer()
+
+                    Text(detailText)
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+                .padding(.horizontal, 16)
+                .frame(height: 44)
+                .background(Color.black)
+
+                ZStack {
+                    Color.black
+
+                    if isLoading {
+                        ProgressView()
+                            .tint(.white)
+                    } else if asset.mediaType == .video, let player {
+                        VideoPlayer(player: player)
+                            .onAppear {
+                                player.play()
+                            }
+                            .onDisappear {
+                                player.pause()
+                            }
+                    } else if let image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .padding(12)
+                    } else {
+                        Text("Не удалось открыть файл")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.8))
+                    }
+                }
+
+                HStack {
+                    Text(bottomInfoText)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.82))
+
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .frame(height: 40)
+                .background(Color.black)
+            }
+        }
+        .onAppear {
+            load()
+        }
+        .onDisappear {
+            player?.pause()
+        }
+    }
+
+    private var detailText: String {
+        if asset.mediaType == .video {
+            let total = Int(round(asset.duration))
+            let minutes = total / 60
+            let seconds = total % 60
+            return String(format: "%02d:%02d", minutes, seconds)
+        } else {
+            return "\(asset.pixelWidth)x\(asset.pixelHeight)"
+        }
+    }
+
+    private var bottomInfoText: String {
+        if let date = asset.creationDate {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "dd.MM.yyyy HH:mm"
+            return formatter.string(from: date)
+        }
+        return "Без даты"
+    }
+
+    private func load() {
+        isLoading = true
+
+        if asset.mediaType == .video {
+            model.requestPlayer(for: asset) { player in
+                self.player = player
+                self.isLoading = false
+            }
+        } else {
+            model.requestFullImage(for: asset) { image in
+                self.image = image
+                self.isLoading = false
+            }
+        }
+    }
 }
