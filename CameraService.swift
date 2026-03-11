@@ -6,7 +6,7 @@ import CoreImage
 import CoreMedia
 import QuartzCore
 
-final class CameraService: NSObject, ObservableObject, AVCaptureFileOutputRecordingDelegate {
+final class CameraService: NSObject, ObservableObject {
     @Published var isRecording: Bool = false
     @Published var useRetroFilter: Bool = true
     @Published var addDateStamp: Bool = false
@@ -67,6 +67,7 @@ final class CameraService: NSObject, ObservableObject, AVCaptureFileOutputRecord
         sessionQueue.async { [weak self] in
             guard let self else { return }
             guard let currentInput = self.videoInput else { return }
+            guard !self.movieOutput.isRecording else { return }
 
             self.session.beginConfiguration()
             self.session.removeInput(currentInput)
@@ -109,8 +110,6 @@ final class CameraService: NSObject, ObservableObject, AVCaptureFileOutputRecord
                 settings = AVCapturePhotoSettings()
             }
 
-            settings.isHighResolutionPhotoEnabled = false
-
             if let connection = self.photoOutput.connection(with: .video),
                connection.isVideoOrientationSupported {
                 connection.videoOrientation = .portrait
@@ -137,10 +136,6 @@ final class CameraService: NSObject, ObservableObject, AVCaptureFileOutputRecord
                 }
 
                 self.movieOutput.startRecording(to: url, recordingDelegate: self)
-
-                DispatchQueue.main.async {
-                    self.isRecording = true
-                }
             }
         }
     }
@@ -192,9 +187,10 @@ final class CameraService: NSObject, ObservableObject, AVCaptureFileOutputRecord
     }
 
     private func configureSession() {
+        guard !isConfigured else { return }
 
         session.beginConfiguration()
-        session.sessionPreset = .photo
+        session.sessionPreset = .high
 
         do {
             let camera = try makeCamera(position: currentPosition)
@@ -248,6 +244,11 @@ final class CameraService: NSObject, ObservableObject, AVCaptureFileOutputRecord
             photoConnection.videoOrientation = .portrait
         }
 
+        if let movieConnection = movieOutput.connection(with: .video),
+           movieConnection.isVideoOrientationSupported {
+            movieConnection.videoOrientation = .portrait
+        }
+
         if let videoConnection = videoDataOutput.connection(with: .video) {
             if videoConnection.isVideoOrientationSupported {
                 videoConnection.videoOrientation = .portrait
@@ -283,7 +284,7 @@ extension CameraService: AVCapturePhotoCaptureDelegate {
         if error != nil { return }
         guard let data = photo.fileDataRepresentation() else { return }
         guard hasPhotoAccess else { return }
-        guard let image = UIImage(data: data) else { return }
+        guard let image = UIImage(data: data)?.normalized() else { return }
 
         let finalImage: UIImage
         if useRetroFilter {
@@ -306,33 +307,7 @@ extension CameraService: AVCapturePhotoCaptureDelegate {
     }
 }
 
-extension CameraService: AVCaptureFileOutputRecordingDelegate {
-    func fileOutput(_ output: AVCaptureFileOutput,
-                    didStartRecordingTo fileURL: URL,
-                    from connections: [AVCaptureConnection]) {
-        DispatchQueue.main.async {
-            self.isRecording = true
-        }
-    }
-
-    func fileOutput(_ output: AVCaptureFileOutput,
-                    didFinishRecordingTo outputFileURL: URL,
-                    from connections: [AVCaptureConnection],
-                    error: Error?) {
-        DispatchQueue.main.async {
-            self.isRecording = false
-        }
-
-        guard error == nil else { return }
-        guard hasPhotoAccess else { return }
-
-        PHPhotoLibrary.shared().performChanges({
-            PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: outputFileURL)
-        }) { _, _ in
-            try? FileManager.default.removeItem(at: outputFileURL)
-        }
-    }
-}
+extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput,
                        didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
@@ -357,7 +332,7 @@ extension CameraService: AVCaptureFileOutputRecordingDelegate {
     }
 }
 
-extension CameraService {
+extension CameraService: AVCaptureFileOutputRecordingDelegate {
     func fileOutput(_ output: AVCaptureFileOutput,
                     didStartRecordingTo fileURL: URL,
                     from connections: [AVCaptureConnection]) {
