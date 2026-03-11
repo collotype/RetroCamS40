@@ -23,6 +23,8 @@ struct ContentView: View {
 
     @State private var currentScreen: Screen = .camera
     @State private var captureMode: CaptureMode = .photo
+    @State private var gallerySelectedAssetID: String?
+    @State private var galleryViewerPresented = false
 
     var body: some View {
         LegacyShell {
