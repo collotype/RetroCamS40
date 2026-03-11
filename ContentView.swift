@@ -23,6 +23,7 @@ struct ContentView: View {
 
     @State private var currentScreen: Screen = .camera
     @State private var captureMode: CaptureMode = .photo
+
     @State private var gallerySelectedAssetID: String?
     @State private var galleryViewerPresented = false
 
@@ -50,16 +51,12 @@ struct ContentView: View {
         .onDisappear { camera.stop() }
     }
 
-    // MARK: - Header
-
     private var headerStatus: String {
         if captureMode == .video && camera.isRecording {
             return "REC"
         }
         return "READY"
     }
-
-    // MARK: - Screen switch
 
     @ViewBuilder
     private var screenBody: some View {
@@ -77,10 +74,10 @@ struct ContentView: View {
             settingsScreen
 
         case .gallery:
-    LegacyGalleryScreen(
-        selectedAssetID: $gallerySelectedAssetID,
-        presentViewer: $galleryViewerPresented
-    )
+            LegacyGalleryScreen(
+                selectedAssetID: $gallerySelectedAssetID,
+                presentViewer: $galleryViewerPresented
+            )
 
         case .editor:
             placeholderScreen(
@@ -95,8 +92,6 @@ struct ContentView: View {
             themesScreen
         }
     }
-
-    // MARK: - Camera
 
     private var cameraScreen: some View {
         VStack(spacing: 12) {
@@ -116,7 +111,7 @@ struct ContentView: View {
                     cycleCaptureMode()
                 }
 
-                LegacyValueTile(title: "Профиль", value: camera.selectedPreset.shortTitle) {
+                LegacyValueTile(title: "Профиль", value: selectedPresetShortTitle) {
                     currentScreen = .cameraSelector
                 }
 
@@ -198,9 +193,10 @@ struct ContentView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                LegacyInfoBadge(title: "MODEL", value: camera.selectedPreset.title)
+                LegacyInfoBadge(title: "MODEL", value: selectedPresetTitle)
                 LegacyInfoBadge(title: "MODE", value: captureMode.rawValue)
                 LegacyInfoBadge(title: "FPS", value: "\(camera.selectedPreviewFPS)")
+
                 if captureMode == .video && camera.isRecording {
                     LegacyInfoBadge(title: "STATE", value: "REC")
                 }
@@ -208,8 +204,6 @@ struct ContentView: View {
             .padding(8)
         }
     }
-
-    // MARK: - Camera selector
 
     private var cameraSelectorScreen: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -219,11 +213,11 @@ struct ContentView: View {
                 VStack(spacing: 10) {
                     ForEach(RetroPreset.allCases) { preset in
                         LegacyMenuRow(
-                            title: preset.title,
+                            title: presetDisplayTitle(preset),
                             subtitle: cameraProfileSubtitle(for: preset),
-                            isSelected: camera.selectedPreset == preset
+                            isSelected: isPresetSelected(preset)
                         ) {
-                            camera.selectedPreset = preset
+                            setSelectedPreset(preset)
                             currentScreen = .camera
                         }
                     }
@@ -233,21 +227,21 @@ struct ContentView: View {
     }
 
     private func cameraProfileSubtitle(for preset: RetroPreset) -> String {
-        switch preset {
-        case .pointAndShoot:
-            return "Мягкий цифровой компакт"
-        case .vhs:
+        switch presetDisplayTitle(preset) {
+        case let name where name.localizedCaseInsensitiveContains("VHS"):
             return "Размытая VHS-эстетика"
-        case .oldPhone:
-            return "Главный режим 0.3MP"
-        case .nokia6230i:
-            return "1.3MP с жёсткой обработкой"
-        case .n73:
+        case let name where name.localizedCaseInsensitiveContains("N73"):
             return "Более чистая 3.2MP картинка"
+        case let name where name.localizedCaseInsensitiveContains("6230"):
+            return "1.3MP с жёсткой обработкой"
+        case let name where name.localizedCaseInsensitiveContains("0.3"),
+             let name where name.localizedCaseInsensitiveContains("VGA"),
+             let name where name.localizedCaseInsensitiveContains("Phone"):
+            return "Главный режим 0.3MP"
+        default:
+            return "Ретро-профиль камеры"
         }
     }
-
-    // MARK: - Options
 
     private var optionsScreen: some View {
         ScrollView {
@@ -282,14 +276,14 @@ struct ContentView: View {
                                     cycleFlash()
                                 }
 
-                                LegacyValueTile(title: "Профиль", value: camera.selectedPreset.shortTitle) {
+                                LegacyValueTile(title: "Профиль", value: selectedPresetShortTitle) {
                                     currentScreen = .cameraSelector
                                 }
                             }
                         } else {
                             HStack(spacing: 8) {
                                 LegacyValueTile(title: "Видео", value: camera.isRecording ? "REC" : "READY") { }
-                                LegacyValueTile(title: "Профиль", value: camera.selectedPreset.shortTitle) {
+                                LegacyValueTile(title: "Профиль", value: selectedPresetShortTitle) {
                                     currentScreen = .cameraSelector
                                 }
                             }
@@ -311,12 +305,14 @@ struct ContentView: View {
                     LegacyMenuRow(title: "Темы", subtitle: "Оформление оболочки") {
                         currentScreen = .themes
                     }
+
+                    LegacyMenuRow(title: "Галерея", subtitle: "Фото и видео внутри приложения") {
+                        currentScreen = .gallery
+                    }
                 }
             }
         }
     }
-
-    // MARK: - Settings
 
     private var settingsScreen: some View {
         ScrollView {
@@ -327,6 +323,7 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("FPS: \(camera.selectedPreviewFPS)")
                             .font(.system(size: 13, weight: .bold))
+
                         Picker(
                             "FPS",
                             selection: Binding(
@@ -342,6 +339,7 @@ struct ContentView: View {
 
                         Text("Формат: \(camera.captureAspect.title)")
                             .font(.system(size: 13, weight: .bold))
+
                         Picker(
                             "Формат",
                             selection: Binding(
@@ -364,6 +362,7 @@ struct ContentView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Вспышка: \(camera.photoFlashMode.title)")
                                 .font(.system(size: 13, weight: .bold))
+
                             Picker(
                                 "Вспышка",
                                 selection: Binding(
@@ -391,6 +390,7 @@ struct ContentView: View {
                                 Text(String(format: "%.1fx", camera.zoomFactor))
                                     .monospacedDigit()
                             }
+
                             Slider(
                                 value: Binding(
                                     get: { camera.zoomFactor },
@@ -416,6 +416,7 @@ struct ContentView: View {
                                     Text(String(format: "%.2f", camera.focusPosition))
                                         .monospacedDigit()
                                 }
+
                                 Slider(
                                     value: Binding(
                                         get: { Double(camera.focusPosition) },
@@ -448,6 +449,7 @@ struct ContentView: View {
                                     Text(String(format: "%.2f", camera.manualISOValue))
                                         .monospacedDigit()
                                 }
+
                                 Slider(
                                     value: Binding(
                                         get: { Double(camera.manualISOValue) },
@@ -464,6 +466,7 @@ struct ContentView: View {
                                     Text(String(format: "%.2f", camera.manualShutterValue))
                                         .monospacedDigit()
                                 }
+
                                 Slider(
                                     value: Binding(
                                         get: { Double(camera.manualShutterValue) },
@@ -482,6 +485,7 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Внутри приложения сейчас нет поддержки, Telegram, Review, Privacy Policy и любых внешних выходов.")
                             .font(.system(size: 13, weight: .medium))
+
                         Text("Сначала пересобираем логику старого приложения поверх твоей базы камеры.")
                             .font(.system(size: 12))
                             .foregroundStyle(.black.opacity(0.72))
@@ -490,8 +494,6 @@ struct ContentView: View {
             }
         }
     }
-
-    // MARK: - Themes
 
     private var themesScreen: some View {
         ScrollView {
@@ -516,8 +518,6 @@ struct ContentView: View {
             }
         }
     }
-
-    // MARK: - Placeholder
 
     private func placeholderScreen(title: String, lines: [String]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -547,8 +547,6 @@ struct ContentView: View {
         .foregroundStyle(.black)
     }
 
-    // MARK: - Soft keys
-
     private var leftSoftKeyTitle: String {
         switch currentScreen {
         case .camera:
@@ -564,16 +562,22 @@ struct ContentView: View {
             return captureMode == .photo
                 ? "Снять"
                 : (camera.isRecording ? "Стоп" : "Rec")
+
         case .cameraSelector:
             return "Выбрать"
+
         case .options:
             return "Камера"
+
         case .settings:
             return "Камера"
+
         case .gallery:
-            return "Открыть"
+            return gallerySelectedAssetID == nil ? "Выбрать" : "Открыть"
+
         case .editor:
             return "Применить"
+
         case .themes:
             return "Выбрать"
         }
@@ -622,7 +626,15 @@ struct ContentView: View {
         case .options, .settings:
             currentScreen = .camera
 
-        case .gallery, .editor, .themes:
+        case .gallery:
+            if gallerySelectedAssetID != nil {
+                galleryViewerPresented = true
+            }
+
+        case .editor:
+            break
+
+        case .themes:
             break
         }
     }
@@ -641,8 +653,6 @@ struct ContentView: View {
             currentScreen = .settings
         }
     }
-
-    // MARK: - Small helpers
 
     private func cycleCaptureMode() {
         guard !camera.isRecording else { return }
@@ -682,4 +692,47 @@ struct ContentView: View {
         let next = all[(index + 1) % all.count]
         camera.updateFlashMode(next)
     }
+
+    private var selectedPresetTitle: String {
+        if let titled = camera.selectedPreset as? any LegacyPresetTitleProviding {
+            return titled.title
+        }
+        return String(describing: camera.selectedPreset)
+    }
+
+    private var selectedPresetShortTitle: String {
+        if let shortTitled = camera.selectedPreset as? any LegacyPresetShortTitleProviding {
+            return shortTitled.shortTitle
+        }
+        if let titled = camera.selectedPreset as? any LegacyPresetTitleProviding {
+            return titled.title
+        }
+        return String(describing: camera.selectedPreset)
+    }
+
+    private func presetDisplayTitle(_ preset: RetroPreset) -> String {
+        if let shortTitled = preset as? any LegacyPresetShortTitleProviding {
+            return shortTitled.title
+        }
+        if let titled = preset as? any LegacyPresetTitleProviding {
+            return titled.title
+        }
+        return String(describing: preset)
+    }
+
+    private func isPresetSelected(_ preset: RetroPreset) -> Bool {
+        String(describing: preset) == String(describing: camera.selectedPreset)
+    }
+
+    private func setSelectedPreset(_ preset: RetroPreset) {
+        camera.selectedPreset = preset
+    }
+}
+
+protocol LegacyPresetTitleProviding {
+    var title: String { get }
+}
+
+protocol LegacyPresetShortTitleProviding {
+    var shortTitle: String { get }
 }
