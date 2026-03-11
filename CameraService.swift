@@ -263,14 +263,7 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
 
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
-        var ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-
-        // Для более стабильного портретного превью
-        if currentPosition == .front {
-            ciImage = ciImage.oriented(.leftMirrored)
-        } else {
-            ciImage = ciImage.oriented(.right)
-        }
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
 
         guard let image = RetroFilter.makePreviewImage(
             from: ciImage,
