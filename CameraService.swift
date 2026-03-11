@@ -121,7 +121,28 @@ final class CameraService: NSObject, ObservableObject {
     }
 
     func toggleRecording() {
-        // Видео временно отключено специально.
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            guard self.isConfigured else { return }
+
+            if self.movieOutput.isRecording {
+                self.movieOutput.stopRecording()
+            } else {
+                let url = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("retrocam_\(UUID().uuidString).mov")
+
+                if let connection = self.movieOutput.connection(with: .video),
+                   connection.isVideoOrientationSupported {
+                    connection.videoOrientation = .portrait
+                }
+
+                self.movieOutput.startRecording(to: url, recordingDelegate: self)
+
+                DispatchQueue.main.async {
+                    self.isRecording = true
+                }
+            }
+        }
     }
 
     private func startSession() {
