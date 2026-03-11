@@ -2,14 +2,14 @@ import SwiftUI
 import AVFoundation
 
 struct ContentView: View {
-    enum Screen: String, CaseIterable, Identifiable {
+    enum Screen: String, CaseIterable {
         case camera = "Камера"
+        case cameraSelector = "Выбор камеры"
+        case options = "Опции"
+        case settings = "Настройки"
         case gallery = "Галерея"
         case editor = "Редактор"
         case themes = "Темы"
-        case settings = "Настройки"
-
-        var id: String { rawValue }
     }
 
     enum CaptureMode: String, CaseIterable, Identifiable {
@@ -25,83 +25,61 @@ struct ContentView: View {
     @State private var captureMode: CaptureMode = .photo
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        LegacyShell {
+            LegacyHeaderBar(
+                title: currentScreen.rawValue,
+                status: headerStatus
+            )
 
-            VStack(spacing: 0) {
-                topStatusBar
-                mainPhoneArea
-                bottomSoftKeys
+            LegacyScreenPanel {
+                screenBody
             }
+
+            LegacySoftKeyBar(
+                leftTitle: leftSoftKeyTitle,
+                centerTitle: centerSoftKeyTitle,
+                rightTitle: rightSoftKeyTitle,
+                leftAction: leftSoftKeyAction,
+                centerAction: centerSoftKeyAction,
+                rightAction: rightSoftKeyAction
+            )
         }
         .onAppear { camera.startIfNeeded() }
         .onDisappear { camera.stop() }
     }
 
-    private var topStatusBar: some View {
-        HStack(spacing: 10) {
-            Text("0.3MP CAM")
-                .font(.system(size: 14, weight: .bold, design: .monospaced))
+    // MARK: - Header
 
-            Spacer()
-
-            Text(currentScreen.rawValue.uppercased())
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .lineLimit(1)
-
-            Spacer()
-
-            Text(captureMode == .video && camera.isRecording ? "REC" : "READY")
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
+    private var headerStatus: String {
+        if captureMode == .video && camera.isRecording {
+            return "REC"
         }
-        .foregroundStyle(.black)
-        .padding(.horizontal, 12)
-        .frame(height: 34)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color(red: 0.82, green: 0.87, blue: 0.74),
-                    Color(red: 0.69, green: 0.75, blue: 0.62)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(.black.opacity(0.2))
-                .frame(height: 1)
-        }
+        return "READY"
     }
 
-    private var mainPhoneArea: some View {
-        GeometryReader { geo in
-            ZStack {
-                Color(red: 0.78, green: 0.84, blue: 0.72)
-
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color(red: 0.87, green: 0.91, blue: 0.82))
-                    .padding(12)
-
-                screenContent(in: geo.size)
-                    .padding(20)
-            }
-        }
-    }
+    // MARK: - Screen switch
 
     @ViewBuilder
-    private func screenContent(in size: CGSize) -> some View {
+    private var screenBody: some View {
         switch currentScreen {
         case .camera:
-            cameraScreen(size: size)
+            cameraScreen
+
+        case .cameraSelector:
+            cameraSelectorScreen
+
+        case .options:
+            optionsScreen
+
+        case .settings:
+            settingsScreen
 
         case .gallery:
             placeholderScreen(
                 title: "Галерея",
                 lines: [
-                    "Тут будет встроенная медиатека приложения.",
-                    "Без внешних переходов.",
-                    "Следующим сообщением дам готовый экран галереи."
+                    "Следующим шагом сюда можно встроить свою медиатеку приложения.",
+                    "Без внешних ссылок и без выходов наружу."
                 ]
             )
 
@@ -109,48 +87,96 @@ struct ContentView: View {
             placeholderScreen(
                 title: "Редактор",
                 lines: [
-                    "Тут будет редактор фото из старой логики.",
-                    "Без поддержки и без ссылок наружу."
+                    "Сюда потом перенесём логику редактирования фото.",
+                    "Отдельным экраном, как в старом приложении."
                 ]
             )
 
         case .themes:
-            placeholderScreen(
-                title: "Темы",
-                lines: [
-                    "Тут будет экран тем/скинов.",
-                    "Пока только внутри приложения."
-                ]
-            )
-
-        case .settings:
-            settingsScreen
+            themesScreen
         }
     }
 
-    private func cameraScreen(size: CGSize) -> some View {
+    // MARK: - Camera
+
+    private var cameraScreen: some View {
         VStack(spacing: 12) {
+            previewBlock
+                .frame(maxWidth: .infinity)
+                .frame(height: 310)
+                .background(Color.black)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.black.opacity(0.22), lineWidth: 2)
+                )
+
             HStack(spacing: 8) {
-                retroTabButton("Камера", isSelected: true) {}
-                retroTabButton("Галерея", isSelected: false) { currentScreen = .gallery }
-                retroTabButton("Темы", isSelected: false) { currentScreen = .themes }
+                LegacyValueTile(title: "Режим", value: captureMode.rawValue) {
+                    guard !camera.isRecording else { return }
+                    cycleCaptureMode()
+                }
+
+                LegacyValueTile(title: "Профиль", value: camera.selectedPreset.shortTitle) {
+                    currentScreen = .cameraSelector
+                }
+
+                LegacyValueTile(title: "Опции", value: "Открыть") {
+                    currentScreen = .options
+                }
             }
 
-            VStack(spacing: 10) {
-                previewBlock
-                    .frame(maxWidth: .infinity)
-                    .frame(height: size.height * 0.42)
-                    .background(Color.black)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(Color.black.opacity(0.25), lineWidth: 2)
-                    )
+            HStack(spacing: 8) {
+                LegacyToggleTile(title: "Retro", isOn: $camera.useRetroFilter)
+                LegacyToggleTile(title: "Дата", isOn: $camera.addDateStamp)
+            }
 
-                captureModeRow
-                presetRow
-                quickSettingsRow
-                shutterRow
+            HStack(spacing: 10) {
+                Button {
+                    camera.switchCamera()
+                } label: {
+                    Text("Сменить\nкамеру")
+                        .font(.system(size: 12, weight: .bold))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(LegacyPalette.soft)
+                        .foregroundStyle(LegacyPalette.ink)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(camera.isRecording)
+
+                Button {
+                    if captureMode == .photo {
+                        camera.takePhoto()
+                    } else {
+                        camera.toggleRecording()
+                    }
+                } label: {
+                    Text(captureMode == .video ? (camera.isRecording ? "СТОП" : "ЗАПИСЬ") : "СНЯТЬ")
+                        .font(.system(size: 18, weight: .heavy))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(Color.black)
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    currentScreen = .settings
+                } label: {
+                    Text("Все\nнастройки")
+                        .font(.system(size: 12, weight: .bold))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(LegacyPalette.soft)
+                        .foregroundStyle(LegacyPalette.ink)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -173,186 +199,132 @@ struct ContentView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                infoBadge("MODEL", camera.selectedPreset.title)
-                infoBadge("MODE", captureMode.rawValue)
+                LegacyInfoBadge(title: "MODEL", value: camera.selectedPreset.title)
+                LegacyInfoBadge(title: "MODE", value: captureMode.rawValue)
+                LegacyInfoBadge(title: "FPS", value: "\(camera.selectedPreviewFPS)")
                 if captureMode == .video && camera.isRecording {
-                    infoBadge("STATE", "REC")
+                    LegacyInfoBadge(title: "STATE", value: "REC")
                 }
             }
             .padding(8)
         }
     }
 
-    private func infoBadge(_ title: String, _ value: String) -> some View {
-        HStack(spacing: 6) {
-            Text(title)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-            Text(value)
-                .font(.system(size: 10, weight: .regular, design: .monospaced))
-                .lineLimit(1)
-        }
-        .foregroundStyle(Color(red: 0.80, green: 0.90, blue: 0.78))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(Color.black.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
+    // MARK: - Camera selector
 
-    private var captureModeRow: some View {
-        HStack(spacing: 8) {
-            ForEach(CaptureMode.allCases) { mode in
-                Button {
-                    guard !camera.isRecording else { return }
-                    captureMode = mode
-                } label: {
-                    Text(mode.rawValue)
-                        .font(.system(size: 14, weight: .bold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(captureMode == mode ? Color.black : Color.black.opacity(0.08))
-                        .foregroundStyle(captureMode == mode ? .white : .black)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    private var cameraSelectorScreen: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            LegacySectionTitle(title: "Выбор камеры")
+
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach(RetroPreset.allCases) { preset in
+                        LegacyMenuRow(
+                            title: preset.title,
+                            subtitle: cameraProfileSubtitle(for: preset),
+                            isSelected: camera.selectedPreset == preset
+                        ) {
+                            camera.selectedPreset = preset
+                            currentScreen = .camera
+                        }
+                    }
                 }
-                .buttonStyle(.plain)
-                .disabled(camera.isRecording)
             }
         }
     }
 
-    private var presetRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(RetroPreset.allCases) { preset in
-                    Button {
-                        camera.selectedPreset = preset
-                    } label: {
-                        VStack(spacing: 4) {
-                            Text(preset.shortTitle)
-                                .font(.system(size: 12, weight: .bold))
-                                .lineLimit(1)
+    private func cameraProfileSubtitle(for preset: RetroPreset) -> String {
+        switch preset {
+        case .pointAndShoot:
+            return "Мягкий цифровой компакт"
+        case .vhs:
+            return "Размытая VHS-эстетика"
+        case .oldPhone:
+            return "Главный режим 0.3MP"
+        case .nokia6230i:
+            return "1.3MP с жёсткой обработкой"
+        case .n73:
+            return "Более чистая 3.2MP картинка"
+        }
+    }
 
-                            if camera.selectedPreset == preset {
-                                Text("выбрано")
-                                    .font(.system(size: 9, weight: .medium))
+    // MARK: - Options
+
+    private var optionsScreen: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                LegacySectionTitle(title: "Быстрые опции")
+
+                LegacyCard {
+                    VStack(spacing: 10) {
+                        HStack(spacing: 8) {
+                            LegacyValueTile(title: "Режим", value: captureMode.rawValue) {
+                                guard !camera.isRecording else { return }
+                                cycleCaptureMode()
+                            }
+
+                            LegacyValueTile(title: "FPS", value: "\(camera.selectedPreviewFPS)") {
+                                cycleFPS()
+                            }
+
+                            LegacyValueTile(title: "Формат", value: camera.captureAspect.title) {
+                                cycleAspect()
                             }
                         }
-                        .foregroundStyle(camera.selectedPreset == preset ? .white : .black)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(camera.selectedPreset == preset ? Color.black : Color.black.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                        HStack(spacing: 8) {
+                            LegacyToggleTile(title: "Retro", isOn: $camera.useRetroFilter)
+                            LegacyToggleTile(title: "Дата", isOn: $camera.addDateStamp)
+                        }
+
+                        if captureMode == .photo {
+                            HStack(spacing: 8) {
+                                LegacyValueTile(title: "Flash", value: camera.photoFlashMode.title) {
+                                    cycleFlash()
+                                }
+
+                                LegacyValueTile(title: "Профиль", value: camera.selectedPreset.shortTitle) {
+                                    currentScreen = .cameraSelector
+                                }
+                            }
+                        } else {
+                            HStack(spacing: 8) {
+                                LegacyValueTile(title: "Видео", value: camera.isRecording ? "REC" : "READY") { }
+                                LegacyValueTile(title: "Профиль", value: camera.selectedPreset.shortTitle) {
+                                    currentScreen = .cameraSelector
+                                }
+                            }
+                        }
                     }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 2)
-        }
-    }
-
-    private var quickSettingsRow: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 8) {
-                toggleTile(
-                    title: "Retro",
-                    isOn: $camera.useRetroFilter
-                )
-
-                toggleTile(
-                    title: "Дата",
-                    isOn: $camera.addDateStamp
-                )
-            }
-
-            HStack(spacing: 8) {
-                retroValueTile(title: "FPS", value: "\(camera.selectedPreviewFPS)") {
-                    cycleFPS()
                 }
 
-                retroValueTile(title: "Формат", value: camera.captureAspect.title) {
-                    cycleAspect()
-                }
+                LegacySectionTitle(title: "Переходы")
 
-                if captureMode == .photo {
-                    retroValueTile(title: "Flash", value: camera.photoFlashMode.title) {
-                        cycleFlashMode()
+                VStack(spacing: 10) {
+                    LegacyMenuRow(title: "Выбор камеры", subtitle: "Список профилей") {
+                        currentScreen = .cameraSelector
                     }
-                } else {
-                    retroValueTile(title: "Видео", value: camera.isRecording ? "REC" : "READY") {
+
+                    LegacyMenuRow(title: "Полные настройки", subtitle: "Оптика, экспозиция, формат") {
+                        currentScreen = .settings
+                    }
+
+                    LegacyMenuRow(title: "Темы", subtitle: "Оформление оболочки") {
+                        currentScreen = .themes
                     }
                 }
             }
         }
     }
 
-    private var shutterRow: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 10) {
-                Button {
-                    camera.switchCamera()
-                } label: {
-                    Text("Сменить\nкамеру")
-                        .font(.system(size: 12, weight: .bold))
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .background(Color.black.opacity(0.08))
-                        .foregroundStyle(.black)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .disabled(camera.isRecording)
-
-                Button {
-                    if captureMode == .photo {
-                        camera.takePhoto()
-                    } else {
-                        camera.toggleRecording()
-                    }
-                } label: {
-                    Text(captureMode == .video
-                         ? (camera.isRecording ? "СТОП" : "ЗАПИСЬ")
-                         : "СНЯТЬ")
-                        .font(.system(size: 18, weight: .heavy))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .background(Color.black)
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    currentScreen = .settings
-                } label: {
-                    Text("Все\nнастройки")
-                        .font(.system(size: 12, weight: .bold))
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .background(Color.black.opacity(0.08))
-                        .foregroundStyle(.black)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
+    // MARK: - Settings
 
     private var settingsScreen: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                sectionTitle("Настройки камеры")
+                LegacySectionTitle(title: "Режим съёмки")
 
-                settingCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Toggle("Retro-эффект", isOn: $camera.useRetroFilter)
-                        Toggle("Штамп даты", isOn: $camera.addDateStamp)
-                    }
-                }
-
-                sectionTitle("Режим предпросмотра")
-
-                settingCard {
+                LegacyCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("FPS: \(camera.selectedPreviewFPS)")
                             .font(.system(size: 13, weight: .bold))
@@ -387,9 +359,9 @@ struct ContentView: View {
                 }
 
                 if captureMode == .photo {
-                    sectionTitle("Фото")
+                    LegacySectionTitle(title: "Фото")
 
-                    settingCard {
+                    LegacyCard {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Вспышка: \(camera.photoFlashMode.title)")
                                 .font(.system(size: 13, weight: .bold))
@@ -409,9 +381,9 @@ struct ContentView: View {
                     }
                 }
 
-                sectionTitle("Оптика")
+                LegacySectionTitle(title: "Оптика")
 
-                settingCard {
+                LegacyCard {
                     VStack(alignment: .leading, spacing: 14) {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
@@ -457,9 +429,9 @@ struct ContentView: View {
                     }
                 }
 
-                sectionTitle("Экспозиция")
+                LegacySectionTitle(title: "Экспозиция")
 
-                settingCard {
+                LegacyCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Toggle(
                             "Ручная экспозиция",
@@ -505,93 +477,54 @@ struct ContentView: View {
                     }
                 }
 
-                sectionTitle("Важно")
+                LegacySectionTitle(title: "Принцип сборки")
 
-                settingCard {
+                LegacyCard {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("В этой версии нет кнопок поддержки, Telegram, Review, внешних URL и любых выходов из приложения.")
+                        Text("Внутри приложения сейчас нет поддержки, Telegram, Review, Privacy Policy и любых внешних выходов.")
                             .font(.system(size: 13, weight: .medium))
-                        Text("Всё управление остаётся внутри приложения.")
+                        Text("Сначала пересобираем логику старого приложения поверх твоей базы камеры.")
                             .font(.system(size: 12))
-                            .foregroundStyle(.black.opacity(0.75))
+                            .foregroundStyle(.black.opacity(0.72))
                     }
                 }
             }
-            .padding(.vertical, 4)
         }
     }
 
-    private func retroTabButton(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 12, weight: .bold))
-                .lineLimit(1)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(isSelected ? Color.black : Color.black.opacity(0.08))
-                .foregroundStyle(isSelected ? .white : .black)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
-    }
+    // MARK: - Themes
 
-    private func toggleTile(title: String, isOn: Binding<Bool>) -> some View {
-        Button {
-            isOn.wrappedValue.toggle()
-        } label: {
-            VStack(spacing: 4) {
-                Text(title)
-                    .font(.system(size: 12, weight: .bold))
-                Text(isOn.wrappedValue ? "ON" : "OFF")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+    private var themesScreen: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                LegacySectionTitle(title: "Темы")
+
+                LegacyCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Экран тем пока без импорта, но уже выделен как отдельный модуль.")
+                            .font(.system(size: 14, weight: .bold))
+
+                        Text("Следующим шагом сюда можно добавить список оболочек, превью и переключение стиля интерфейса.")
+                            .font(.system(size: 13))
+                    }
+                }
+
+                VStack(spacing: 10) {
+                    LegacyMenuRow(title: "Classic Green", subtitle: "Базовая тема оболочки", isSelected: true) { }
+                    LegacyMenuRow(title: "Dark Steel", subtitle: "Тёмная телефонная тема") { }
+                    LegacyMenuRow(title: "Blue Menu", subtitle: "Псевдо Series 40") { }
+                }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-            .background(isOn.wrappedValue ? Color.black : Color.black.opacity(0.08))
-            .foregroundStyle(isOn.wrappedValue ? .white : .black)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .buttonStyle(.plain)
     }
 
-    private func retroValueTile(title: String, value: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Text(title)
-                    .font(.system(size: 11, weight: .bold))
-                Text(value)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-            .background(Color.black.opacity(0.08))
-            .foregroundStyle(.black)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func sectionTitle(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(.system(size: 12, weight: .heavy, design: .monospaced))
-            .foregroundStyle(.black.opacity(0.8))
-    }
-
-    private func settingCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            content()
-        }
-        .padding(12)
-        .background(Color.black.opacity(0.07))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .tint(.black)
-    }
+    // MARK: - Placeholder
 
     private func placeholderScreen(title: String, lines: [String]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
                 .font(.system(size: 22, weight: .heavy))
+
             ForEach(lines, id: \.self) { line in
                 Text("• \(line)")
                     .font(.system(size: 15, weight: .medium))
@@ -615,51 +548,13 @@ struct ContentView: View {
         .foregroundStyle(.black)
     }
 
-    private var bottomSoftKeys: some View {
-        HStack {
-            Button {
-                switch currentScreen {
-                case .camera:
-                    currentScreen = .gallery
-                case .gallery, .editor, .themes, .settings:
-                    currentScreen = .camera
-                }
-            } label: {
-                Text(leftSoftKeyTitle)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
-            }
-
-            Spacer()
-
-            Button {
-                centerSoftKeyAction()
-            } label: {
-                Text(centerSoftKeyTitle)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
-            }
-
-            Spacer()
-
-            Button {
-                currentScreen = .settings
-            } label: {
-                Text("Меню")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
-            }
-        }
-        .padding(.horizontal, 18)
-        .frame(height: 44)
-        .background(Color.black)
-    }
+    // MARK: - Soft keys
 
     private var leftSoftKeyTitle: String {
         switch currentScreen {
         case .camera:
-            return "Галерея"
-        case .gallery, .editor, .themes, .settings:
+            return "Опции"
+        default:
             return "Назад"
         }
     }
@@ -670,14 +565,46 @@ struct ContentView: View {
             return captureMode == .photo
                 ? "Снять"
                 : (camera.isRecording ? "Стоп" : "Rec")
+        case .cameraSelector:
+            return "Выбрать"
+        case .options:
+            return "Камера"
+        case .settings:
+            return "Камера"
         case .gallery:
             return "Открыть"
         case .editor:
             return "Применить"
         case .themes:
             return "Выбрать"
-        case .settings:
+        }
+    }
+
+    private var rightSoftKeyTitle: String {
+        switch currentScreen {
+        case .camera:
+            return "Меню"
+        case .cameraSelector:
             return "Камера"
+        case .options:
+            return "Настр."
+        case .settings:
+            return "Опции"
+        case .gallery:
+            return "Меню"
+        case .editor:
+            return "Меню"
+        case .themes:
+            return "Меню"
+        }
+    }
+
+    private func leftSoftKeyAction() {
+        switch currentScreen {
+        case .camera:
+            currentScreen = .options
+        default:
+            currentScreen = .camera
         }
     }
 
@@ -690,18 +617,37 @@ struct ContentView: View {
                 camera.toggleRecording()
             }
 
-        case .gallery:
-            break
-
-        case .editor:
-            break
-
-        case .themes:
-            break
-
-        case .settings:
+        case .cameraSelector:
             currentScreen = .camera
+
+        case .options, .settings:
+            currentScreen = .camera
+
+        case .gallery, .editor, .themes:
+            break
         }
+    }
+
+    private func rightSoftKeyAction() {
+        switch currentScreen {
+        case .camera:
+            currentScreen = .settings
+        case .cameraSelector:
+            currentScreen = .camera
+        case .options:
+            currentScreen = .settings
+        case .settings:
+            currentScreen = .options
+        case .gallery, .editor, .themes:
+            currentScreen = .settings
+        }
+    }
+
+    // MARK: - Small helpers
+
+    private func cycleCaptureMode() {
+        guard !camera.isRecording else { return }
+        captureMode = captureMode == .photo ? .video : .photo
     }
 
     private func cycleFPS() {
@@ -726,7 +672,7 @@ struct ContentView: View {
         camera.updateCaptureAspect(next)
     }
 
-    private func cycleFlashMode() {
+    private func cycleFlash() {
         let all = PhotoFlashMode.allCases
         guard let index = all.firstIndex(of: camera.photoFlashMode) else {
             if let first = all.first {
