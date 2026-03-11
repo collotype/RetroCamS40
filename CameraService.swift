@@ -10,11 +10,10 @@ final class CameraService: NSObject, ObservableObject {
     @Published var isRecording: Bool = false
     @Published var useRetroFilter: Bool = true
     @Published var addDateStamp: Bool = false
-    @Published var selectedPreset: RetroPreset = .pointAndShoot
+    @Published var selectedPreset: RetroPreset = .oldPhone
     @Published var previewImage: UIImage?
-
     @Published var selectedPreviewFPS: Int = 30
-    @Published var captureAspect: CaptureAspect = .full
+    @Published var captureAspect: CaptureAspect = .fourThree
     @Published var photoFlashMode: PhotoFlashMode = .off
     @Published var zoomFactor: CGFloat = 1.0
     @Published var manualFocusEnabled: Bool = false
@@ -33,11 +32,15 @@ final class CameraService: NSObject, ObservableObject {
 
     private var videoInput: AVCaptureDeviceInput?
     private var audioInput: AVCaptureDeviceInput?
+
     private var isConfigured = false
     private var currentPosition: AVCaptureDevice.Position = .back
+
     private var hasPhotoAccess = false
     private var hasMicrophoneAccess = false
+
     private var lastPreviewTimestamp: CFTimeInterval = 0
+    private let previewThrottleQueue = DispatchQueue(label: "retrocam.preview.queue")
 
     override init() {
         super.init()
@@ -45,12 +48,15 @@ final class CameraService: NSObject, ObservableObject {
         requestMicrophonePermission()
     }
 
+    // MARK: - Public control
+
     func startIfNeeded() {
         let status = AVCaptureDevice.authorizationStatus(for: .video)
 
         switch status {
         case .authorized:
             startSession()
+
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 guard let self else { return }
@@ -58,6 +64,7 @@ final class CameraService: NSObject, ObservableObject {
                     self.startSession()
                 }
             }
+
         default:
             break
         }
@@ -66,8 +73,13 @@ final class CameraService: NSObject, ObservableObject {
     func stop() {
         sessionQueue.async { [weak self] in
             guard let self else { return }
+
             if self.session.isRunning {
                 self.session.stopRunning()
+            }
+
+            DispatchQueue.main.async {
+                self.previewImage = nil
             }
         }
     }
@@ -75,8 +87,8 @@ final class CameraService: NSObject, ObservableObject {
     func switchCamera() {
         sessionQueue.async { [weak self] in
             guard let self else { return }
-            guard let currentInput = self.videoInput else { return }
             guard !self.movieOutput.isRecording else { return }
+            guard let currentInput = self.videoInput else { return }
 
             self.session.beginConfiguration()
             self.session.removeInput(currentInput)
@@ -93,6 +105,7 @@ final class CameraService: NSObject, ObservableObject {
                 } else {
                     self.session.addInput(currentInput)
                     self.videoInput = currentInput
+                    self.currentPosition = (self.currentPosition == .back) ? .front : .back
                 }
 
                 self.configureConnections()
@@ -100,6 +113,7 @@ final class CameraService: NSObject, ObservableObject {
             } catch {
                 self.session.addInput(currentInput)
                 self.videoInput = currentInput
+                self.currentPosition = (self.currentPosition == .back) ? .front : .back
             }
 
             self.session.commitConfiguration()
@@ -117,9 +131,14 @@ final class CameraService: NSObject, ObservableObject {
                 settings.flashMode = self.avFlashMode
             }
 
+            settings.isHighResolutionPhotoEnabled = false
+
             if let connection = self.photoOutput.connection(with: .video),
                connection.isVideoOrientationSupported {
                 connection.videoOrientation = .portrait
+                if connection.isVideoMirroringSupported {
+                    connection.isVideoMirrored = (self.currentPosition == .front)
+                }
             }
 
             self.photoOutput.capturePhoto(with: settings, delegate: self)
@@ -133,27 +152,34 @@ final class CameraService: NSObject, ObservableObject {
 
             if self.movieOutput.isRecording {
                 self.movieOutput.stopRecording()
-            } else {
-                let url = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("retrocam_\(UUID().uuidString).mov")
-
-                if let connection = self.movieOutput.connection(with: .video),
-                   connection.isVideoOrientationSupported {
-                    connection.videoOrientation = .portrait
-                }
-
-                self.movieOutput.startRecording(to: url, recordingDelegate: self)
+                return
             }
+
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("retrocam_\(UUID().uuidString).mov")
+
+            if let connection = self.movieOutput.connection(with: .video),
+               connection.isVideoOrientationSupported {
+                connection.videoOrientation = .portrait
+
+                if connection.isVideoMirroringSupported {
+                    connection.isVideoMirrored = (self.currentPosition == .front)
+                }
+            }
+
+            self.movieOutput.startRecording(to: url, recordingDelegate: self)
         }
     }
 
-    // MARK: - Settings updates
+    // MARK: - Setting updates
 
     func updatePreviewFPS(_ fps: Int) {
         let safe = [24, 30, 60].contains(fps) ? fps : 30
+
         DispatchQueue.main.async {
             self.selectedPreviewFPS = safe
         }
+
         sessionQueue.async { [weak self] in
             self?.applyFrameRate()
         }
@@ -175,6 +201,7 @@ final class CameraService: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.zoomFactor = zoom
         }
+
         sessionQueue.async { [weak self] in
             self?.applyZoom()
         }
@@ -184,6 +211,7 @@ final class CameraService: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.manualFocusEnabled = enabled
         }
+
         sessionQueue.async { [weak self] in
             self?.applyFocus()
         }
@@ -191,9 +219,11 @@ final class CameraService: NSObject, ObservableObject {
 
     func updateFocusPosition(_ value: Float) {
         let clamped = min(max(value, 0), 1)
+
         DispatchQueue.main.async {
             self.focusPosition = clamped
         }
+
         sessionQueue.async { [weak self] in
             self?.applyFocus()
         }
@@ -203,6 +233,7 @@ final class CameraService: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.manualExposureEnabled = enabled
         }
+
         sessionQueue.async { [weak self] in
             self?.applyExposure()
         }
@@ -210,9 +241,11 @@ final class CameraService: NSObject, ObservableObject {
 
     func updateManualISOValue(_ value: Float) {
         let clamped = min(max(value, 0), 1)
+
         DispatchQueue.main.async {
             self.manualISOValue = clamped
         }
+
         sessionQueue.async { [weak self] in
             self?.applyExposure()
         }
@@ -220,15 +253,17 @@ final class CameraService: NSObject, ObservableObject {
 
     func updateManualShutterValue(_ value: Float) {
         let clamped = min(max(value, 0), 1)
+
         DispatchQueue.main.async {
             self.manualShutterValue = clamped
         }
+
         sessionQueue.async { [weak self] in
             self?.applyExposure()
         }
     }
 
-    // MARK: - Session setup
+    // MARK: - Session
 
     private func startSession() {
         sessionQueue.async { [weak self] in
@@ -243,38 +278,6 @@ final class CameraService: NSObject, ObservableObject {
             }
 
             self.applyCurrentDeviceSettings()
-        }
-    }
-
-    private func requestPhotoPermission() {
-        let status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
-
-        switch status {
-        case .authorized, .limited:
-            hasPhotoAccess = true
-        case .notDetermined:
-            PHPhotoLibrary.requestAuthorization(for: .addOnly) { [weak self] newStatus in
-                guard let self else { return }
-                self.hasPhotoAccess = (newStatus == .authorized || newStatus == .limited)
-            }
-        default:
-            hasPhotoAccess = false
-        }
-    }
-
-    private func requestMicrophonePermission() {
-        let status = AVCaptureDevice.authorizationStatus(for: .audio)
-
-        switch status {
-        case .authorized:
-            hasMicrophoneAccess = true
-        case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
-                guard let self else { return }
-                self.hasMicrophoneAccess = granted
-            }
-        default:
-            hasMicrophoneAccess = false
         }
     }
 
@@ -303,6 +306,7 @@ final class CameraService: NSObject, ObservableObject {
 
             if session.canAddOutput(photoOutput) {
                 session.addOutput(photoOutput)
+                photoOutput.isHighResolutionCaptureEnabled = false
             }
 
             if session.canAddOutput(movieOutput) {
@@ -316,12 +320,12 @@ final class CameraService: NSObject, ObservableObject {
 
             if session.canAddOutput(videoDataOutput) {
                 session.addOutput(videoDataOutput)
-                videoDataOutput.setSampleBufferDelegate(self, queue: sessionQueue)
+                videoDataOutput.setSampleBufferDelegate(self, queue: previewThrottleQueue)
             }
 
             configureConnections()
-
             session.commitConfiguration()
+
             isConfigured = true
         } catch {
             session.commitConfiguration()
@@ -330,21 +334,28 @@ final class CameraService: NSObject, ObservableObject {
     }
 
     private func configureConnections() {
-        if let photoConnection = photoOutput.connection(with: .video),
-           photoConnection.isVideoOrientationSupported {
-            photoConnection.videoOrientation = .portrait
+        if let photoConnection = photoOutput.connection(with: .video) {
+            if photoConnection.isVideoOrientationSupported {
+                photoConnection.videoOrientation = .portrait
+            }
+            if photoConnection.isVideoMirroringSupported {
+                photoConnection.isVideoMirrored = (currentPosition == .front)
+            }
         }
 
-        if let movieConnection = movieOutput.connection(with: .video),
-           movieConnection.isVideoOrientationSupported {
-            movieConnection.videoOrientation = .portrait
+        if let movieConnection = movieOutput.connection(with: .video) {
+            if movieConnection.isVideoOrientationSupported {
+                movieConnection.videoOrientation = .portrait
+            }
+            if movieConnection.isVideoMirroringSupported {
+                movieConnection.isVideoMirrored = (currentPosition == .front)
+            }
         }
 
         if let videoConnection = videoDataOutput.connection(with: .video) {
             if videoConnection.isVideoOrientationSupported {
                 videoConnection.videoOrientation = .portrait
             }
-
             if videoConnection.isVideoMirroringSupported {
                 videoConnection.isVideoMirrored = (currentPosition == .front)
             }
@@ -365,6 +376,44 @@ final class CameraService: NSObject, ObservableObject {
             code: -1,
             userInfo: [NSLocalizedDescriptionKey: "Камера недоступна"]
         )
+    }
+
+    // MARK: - Permissions
+
+    private func requestPhotoPermission() {
+        let status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+
+        switch status {
+        case .authorized, .limited:
+            hasPhotoAccess = true
+
+        case .notDetermined:
+            PHPhotoLibrary.requestAuthorization(for: .addOnly) { [weak self] newStatus in
+                guard let self else { return }
+                self.hasPhotoAccess = (newStatus == .authorized || newStatus == .limited)
+            }
+
+        default:
+            hasPhotoAccess = false
+        }
+    }
+
+    private func requestMicrophonePermission() {
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+
+        switch status {
+        case .authorized:
+            hasMicrophoneAccess = true
+
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                guard let self else { return }
+                self.hasMicrophoneAccess = granted
+            }
+
+        default:
+            hasMicrophoneAccess = false
+        }
     }
 
     // MARK: - Device controls
@@ -470,8 +519,25 @@ final class CameraService: NSObject, ObservableObject {
         }
     }
 
-    private func saveVideoToLibrary(_ url: URL, cleanupURLs: [URL]) {
+    // MARK: - Save
+
+    private func savePhotoToLibrary(_ data: Data) {
         guard hasPhotoAccess else { return }
+
+        PHPhotoLibrary.shared().performChanges({
+            let request = PHAssetCreationRequest.forAsset()
+            let options = PHAssetResourceCreationOptions()
+            request.addResource(with: .photo, data: data, options: options)
+        })
+    }
+
+    private func saveVideoToLibrary(_ url: URL, cleanupURLs: [URL]) {
+        guard hasPhotoAccess else {
+            for fileURL in cleanupURLs {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+            return
+        }
 
         PHPhotoLibrary.shared().performChanges({
             PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
@@ -483,13 +549,16 @@ final class CameraService: NSObject, ObservableObject {
     }
 }
 
+// MARK: - Photo
+
 extension CameraService: AVCapturePhotoCaptureDelegate {
-    func photoOutput(_ output: AVCapturePhotoOutput,
-                     didFinishProcessingPhoto photo: AVCapturePhoto,
-                     error: Error?) {
+    func photoOutput(
+        _ output: AVCapturePhotoOutput,
+        didFinishProcessingPhoto photo: AVCapturePhoto,
+        error: Error?
+    ) {
         if error != nil { return }
         guard let data = photo.fileDataRepresentation() else { return }
-        guard hasPhotoAccess else { return }
         guard let image = UIImage(data: data)?.normalized() else { return }
 
         let finalImage: UIImage
@@ -509,24 +578,27 @@ extension CameraService: AVCapturePhotoCaptureDelegate {
         }
 
         guard let finalData = finalImage.jpegData(compressionQuality: 0.88) else { return }
-
-        PHPhotoLibrary.shared().performChanges({
-            let request = PHAssetCreationRequest.forAsset()
-            let options = PHAssetResourceCreationOptions()
-            request.addResource(with: .photo, data: finalData, options: options)
-        })
+        savePhotoToLibrary(finalData)
     }
 }
 
+// MARK: - Preview
+
 extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
-    func captureOutput(_ output: AVCaptureOutput,
-                       didOutput sampleBuffer: CMSampleBuffer,
-                       from connection: AVCaptureConnection) {
+    func captureOutput(
+        _ output: AVCaptureOutput,
+        didOutput sampleBuffer: CMSampleBuffer,
+        from connection: AVCaptureConnection
+    ) {
         let now = CACurrentMediaTime()
         let minInterval = 1.0 / Double(max(selectedPreviewFPS, 12))
 
         guard now - lastPreviewTimestamp >= minInterval else { return }
         lastPreviewTimestamp = now
+
+        guard !movieOutput.isRecording || selectedPreset == .oldPhone || selectedPreset == .vhs else {
+            return
+        }
 
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
@@ -545,19 +617,25 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
     }
 }
 
+// MARK: - Video recording
+
 extension CameraService: AVCaptureFileOutputRecordingDelegate {
-    func fileOutput(_ output: AVCaptureFileOutput,
-                    didStartRecordingTo fileURL: URL,
-                    from connections: [AVCaptureConnection]) {
+    func fileOutput(
+        _ output: AVCaptureFileOutput,
+        didStartRecordingTo fileURL: URL,
+        from connections: [AVCaptureConnection]
+    ) {
         DispatchQueue.main.async {
             self.isRecording = true
         }
     }
 
-    func fileOutput(_ output: AVCaptureFileOutput,
-                    didFinishRecordingTo outputFileURL: URL,
-                    from connections: [AVCaptureConnection],
-                    error: Error?) {
+    func fileOutput(
+        _ output: AVCaptureFileOutput,
+        didFinishRecordingTo outputFileURL: URL,
+        from connections: [AVCaptureConnection],
+        error: Error?
+    ) {
         DispatchQueue.main.async {
             self.isRecording = false
         }
@@ -575,6 +653,7 @@ extension CameraService: AVCaptureFileOutputRecordingDelegate {
             switch result {
             case .success(let exportedURL):
                 self.saveVideoToLibrary(exportedURL, cleanupURLs: [outputFileURL, exportedURL])
+
             case .failure:
                 self.saveVideoToLibrary(outputFileURL, cleanupURLs: [outputFileURL])
             }
