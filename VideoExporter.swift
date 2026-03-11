@@ -29,7 +29,7 @@ enum VideoExporter {
 
         try? FileManager.default.removeItem(at: outputURL)
 
-        let composition = AVVideoComposition(
+        let composition = AVMutableVideoComposition(
             asset: asset,
             applyingCIFiltersWithHandler: { request in
                 let source = request.sourceImage.clampedToExtent()
@@ -65,8 +65,6 @@ enum VideoExporter {
         }
     }
 
-    // MARK: - Export preset
-
     private static func exportPresetName(for preset: RetroPreset) -> String {
         switch preset {
         case .oldPhone, .vhs:
@@ -91,8 +89,6 @@ enum VideoExporter {
         }
     }
 
-    // MARK: - Main video look
-
     private static func applyVideoLook(to image: CIImage, preset: RetroPreset) -> CIImage {
         switch preset {
         case .oldPhone:
@@ -107,8 +103,6 @@ enum VideoExporter {
             return n73VideoLook(image)
         }
     }
-
-    // MARK: - Presets
 
     private static func oldPhoneVideoLook(_ image: CIImage) -> CIImage {
         let downscaled = pixelateAndResize(
@@ -219,8 +213,6 @@ enum VideoExporter {
         output = addVignette(to: output, intensity: 0.05)
         return output
     }
-
-    // MARK: - Helpers
 
     private static func pixelateAndResize(
         _ image: CIImage,
