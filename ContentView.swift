@@ -693,46 +693,23 @@ struct ContentView: View {
         camera.updateFlashMode(next)
     }
 
-    private var selectedPresetTitle: String {
-        if let titled = camera.selectedPreset as? any LegacyPresetTitleProviding {
-            return titled.title
-        }
-        return String(describing: camera.selectedPreset)
-    }
-
-    private var selectedPresetShortTitle: String {
-        if let shortTitled = camera.selectedPreset as? any LegacyPresetShortTitleProviding {
-            return shortTitled.shortTitle
-        }
-        if let titled = camera.selectedPreset as? any LegacyPresetTitleProviding {
-            return titled.title
-        }
-        return String(describing: camera.selectedPreset)
-    }
-
-    private func presetDisplayTitle(_ preset: RetroPreset) -> String {
-        if let shortTitled = preset as? any LegacyPresetShortTitleProviding {
-            return shortTitled.title
-        }
-        if let titled = preset as? any LegacyPresetTitleProviding {
-            return titled.title
-        }
-        return String(describing: preset)
-    }
-
-    private func isPresetSelected(_ preset: RetroPreset) -> Bool {
-        String(describing: preset) == String(describing: camera.selectedPreset)
-    }
-
-    private func setSelectedPreset(_ preset: RetroPreset) {
-        camera.selectedPreset = preset
-    }
+private var selectedPresetTitle: String {
+    camera.selectedPreset.title
 }
 
-protocol LegacyPresetTitleProviding {
-    var title: String { get }
+private var selectedPresetShortTitle: String {
+    camera.selectedPreset.shortTitle
 }
 
-protocol LegacyPresetShortTitleProviding {
-    var shortTitle: String { get }
+private func presetDisplayTitle(_ preset: RetroPreset) -> String {
+    preset.title
+}
+
+private func isPresetSelected(_ preset: RetroPreset) -> Bool {
+    preset == camera.selectedPreset
+}
+
+private func setSelectedPreset(_ preset: RetroPreset) {
+    camera.selectedPreset = preset
+}
 }
