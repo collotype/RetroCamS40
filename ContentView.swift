@@ -145,7 +145,9 @@ struct ContentView: View {
 
             previewBlock
                 .frame(maxWidth: .infinity)
-                .frame(height: 300)
+                .frame(height: 290)
+
+            legacyStatusStrip
 
             HStack(spacing: 8) {
                 infoCell(title: "MODE", value: captureMode.rawValue) {
@@ -163,8 +165,9 @@ struct ContentView: View {
             }
 
             HStack(spacing: 8) {
-                toggleCell(title: "RETRO", isOn: $camera.useRetroFilter)
-                toggleCell(title: "DATE", isOn: $camera.addDateStamp)
+                infoCell(title: "ASPECT", value: camera.captureAspect.title) {
+                    cycleAspect()
+                }
 
                 if captureMode == .photo {
                     infoCell(title: "FLASH", value: camera.photoFlashMode.title) {
@@ -173,17 +176,15 @@ struct ContentView: View {
                 } else {
                     infoCell(title: "VIDEO", value: camera.isRecording ? "REC" : "READY") { }
                 }
-            }
-
-            HStack(spacing: 8) {
-                infoCell(title: "ASPECT", value: camera.captureAspect.title) {
-                    cycleAspect()
-                }
 
                 infoCell(title: "ZOOM", value: String(format: "%.1fx", camera.zoomFactor)) {
                     currentScreen = .settings
                 }
+            }
 
+            HStack(spacing: 8) {
+                toggleCell(title: "RETRO", isOn: $camera.useRetroFilter)
+                toggleCell(title: "DATE", isOn: $camera.addDateStamp)
                 infoCell(title: "MENU", value: "OPEN") {
                     currentScreen = .options
                 }
@@ -218,11 +219,11 @@ struct ContentView: View {
                 .buttonStyle(.plain)
 
                 Button {
-                    currentScreen = .settings
+                    currentScreen = .options
                 } label: {
                     actionButtonLabel(
-                        top: "FULL",
-                        bottom: "SETTINGS",
+                        top: "QUICK",
+                        bottom: "MENU",
                         dark: false
                     )
                 }
@@ -334,56 +335,89 @@ struct ContentView: View {
     private var optionsScreen: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                sectionTitle("Быстрые опции")
-
-                card {
-                    VStack(spacing: 8) {
-                        HStack(spacing: 8) {
-                            infoCell(title: "MODE", value: captureMode.rawValue) {
-                                guard !camera.isRecording else { return }
-                                cycleCaptureMode()
-                            }
-
-                            infoCell(title: "FPS", value: "\(camera.selectedPreviewFPS)") {
-                                cycleFPS()
-                            }
-
-                            infoCell(title: "ASPECT", value: camera.captureAspect.title) {
-                                cycleAspect()
-                            }
-                        }
-
-                        HStack(spacing: 8) {
-                            toggleCell(title: "RETRO", isOn: $camera.useRetroFilter)
-                            toggleCell(title: "DATE", isOn: $camera.addDateStamp)
-
-                            if captureMode == .photo {
-                                infoCell(title: "FLASH", value: camera.photoFlashMode.title) {
-                                    cycleFlash()
-                                }
-                            } else {
-                                infoCell(title: "VIDEO", value: camera.isRecording ? "REC" : "READY") { }
-                            }
-                        }
-                    }
-                }
-
-                sectionTitle("Меню")
+                sectionTitle("Опции камеры")
 
                 VStack(spacing: 8) {
-                    menuRow(title: "Выбор камеры", subtitle: "Список профилей") {
+                    optionRow(
+                        title: "Режим съёмки",
+                        value: captureMode.rawValue,
+                        subtitle: "Фото или видео"
+                    ) {
+                        guard !camera.isRecording else { return }
+                        cycleCaptureMode()
+                    }
+
+                    optionRow(
+                        title: "Профиль камеры",
+                        value: camera.selectedPreset.shortTitle,
+                        subtitle: camera.selectedPreset.title
+                    ) {
                         currentScreen = .cameraSelector
                     }
 
-                    menuRow(title: "Полные настройки", subtitle: "Оптика и экспозиция") {
+                    optionRow(
+                        title: "FPS",
+                        value: "\(camera.selectedPreviewFPS)",
+                        subtitle: "Частота предпросмотра"
+                    ) {
+                        cycleFPS()
+                    }
+
+                    optionRow(
+                        title: "Формат",
+                        value: camera.captureAspect.title,
+                        subtitle: "Соотношение сторон"
+                    ) {
+                        cycleAspect()
+                    }
+
+                    if captureMode == .photo {
+                        optionRow(
+                            title: "Вспышка",
+                            value: camera.photoFlashMode.title,
+                            subtitle: "Режим фото-вспышки"
+                        ) {
+                            cycleFlash()
+                        }
+                    }
+
+                    optionRow(
+                        title: "Retro Filter",
+                        value: camera.useRetroFilter ? "ON" : "OFF",
+                        subtitle: "Главная обработка изображения"
+                    ) {
+                        camera.useRetroFilter.toggle()
+                    }
+
+                    optionRow(
+                        title: "Дата на снимке",
+                        value: camera.addDateStamp ? "ON" : "OFF",
+                        subtitle: "Штамп даты в старом стиле"
+                    ) {
+                        camera.addDateStamp.toggle()
+                    }
+
+                    optionRow(
+                        title: "Полные настройки",
+                        value: "OPEN",
+                        subtitle: "Зум, фокус, экспозиция"
+                    ) {
                         currentScreen = .settings
                     }
 
-                    menuRow(title: "Галерея", subtitle: "Фото и видео внутри приложения") {
+                    optionRow(
+                        title: "Галерея",
+                        value: "OPEN",
+                        subtitle: "Фото и видео внутри приложения"
+                    ) {
                         currentScreen = .gallery
                     }
 
-                    menuRow(title: "Редактор", subtitle: "Заглушка под старую логику") {
+                    optionRow(
+                        title: "Редактор",
+                        value: "OPEN",
+                        subtitle: "Заглушка под старую логику"
+                    ) {
                         currentScreen = .editor
                     }
                 }
@@ -764,6 +798,76 @@ struct ContentView: View {
         }
         let next = all[(index + 1) % all.count]
         camera.updateFlashMode(next)
+    }
+
+    private var legacyStatusStrip: some View {
+        HStack(spacing: 6) {
+            smallStatPill("ISO", camera.manualExposureEnabled ? formatted01(camera.manualISOValue) : "AUTO")
+            smallStatPill("SHR", camera.manualExposureEnabled ? formatted01(camera.manualShutterValue) : "AUTO")
+            smallStatPill("FOC", camera.manualFocusEnabled ? formatted01(camera.focusPosition) : "AUTO")
+            smallStatPill("LEN", camera.zoomFactor > 1.01 ? String(format: "%.1fx", camera.zoomFactor) : "1.0x")
+        }
+    }
+
+    private func smallStatPill(_ title: String, _ value: String) -> some View {
+        VStack(spacing: 2) {
+            Text(title)
+                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+            Text(value)
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.06))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(Color.black.opacity(0.10), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    private func optionRow(
+        title: String,
+        value: String,
+        subtitle: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .bold))
+
+                    Text(subtitle)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.black.opacity(0.62))
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(value)
+                        .font(.system(size: 12, weight: .heavy, design: .monospaced))
+                    Text(">")
+                        .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .background(LegacyPalette.card)
+            .foregroundStyle(.black)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.black.opacity(0.10), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func formatted01(_ value: Float) -> String {
+        String(format: "%.2f", value)
     }
 
     private func sectionTitle(_ text: String) -> some View {
