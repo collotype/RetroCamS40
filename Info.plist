@@ -5,6 +5,9 @@
     <key>NSPhotoLibraryUsageDescription</key>
     <string>Приложению нужен доступ к медиатеке для встроенной галереи и просмотра фото и видео.</string>
 
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Приложению нужен доступ к медиатеке для встроенной галереи и просмотра фото и видео.</string>
+
     <key>CFBundleDevelopmentRegion</key>
     <string>ru</string>
 
