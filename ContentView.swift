@@ -4,14 +4,13 @@ import Photos
 import AVKit
 
 struct ContentView: View {
-    enum Screen: String, CaseIterable {
+    enum Screen: String {
         case camera = "Камера"
         case cameraSelector = "Выбор камеры"
         case options = "Опции"
         case settings = "Настройки"
         case gallery = "Галерея"
         case editor = "Редактор"
-        case themes = "Темы"
     }
 
     enum CaptureMode: String, CaseIterable, Identifiable {
@@ -30,27 +29,102 @@ struct ContentView: View {
     @State private var galleryViewerPresented = false
 
     var body: some View {
-        LegacyShell {
-            LegacyHeaderBar(
-                title: currentScreen.rawValue,
-                status: headerStatus
-            )
+        ZStack {
+            LegacyPalette.outer.ignoresSafeArea()
 
-            LegacyScreenPanel {
-                screenBody
+            VStack(spacing: 0) {
+                topHeader
+                phoneBody
+                softKeyBar
             }
-
-            LegacySoftKeyBar(
-                leftTitle: leftSoftKeyTitle,
-                centerTitle: centerSoftKeyTitle,
-                rightTitle: rightSoftKeyTitle,
-                leftAction: leftSoftKeyAction,
-                centerAction: centerSoftKeyAction,
-                rightAction: rightSoftKeyAction
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(LegacyPalette.shell)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(LegacyPalette.shellStroke, lineWidth: 4)
+            )
+            .padding(8)
         }
         .onAppear { camera.startIfNeeded() }
         .onDisappear { camera.stop() }
+    }
+
+    private var topHeader: some View {
+        HStack(spacing: 8) {
+            Text("0.3MP")
+                .font(.system(size: 14, weight: .heavy, design: .monospaced))
+
+            Spacer()
+
+            Text(currentScreen.rawValue.uppercased())
+                .font(.system(size: 12, weight: .heavy, design: .monospaced))
+                .lineLimit(1)
+
+            Spacer()
+
+            Text(headerStatus)
+                .font(.system(size: 12, weight: .heavy, design: .monospaced))
+        }
+        .foregroundStyle(.black)
+        .padding(.horizontal, 12)
+        .frame(height: 34)
+        .background(
+            LinearGradient(
+                colors: [LegacyPalette.lcdBright, LegacyPalette.lcdMid],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.black.opacity(0.18), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.bottom, 8)
+    }
+
+    private var phoneBody: some View {
+        GeometryReader { _ in
+            ZStack {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(LegacyPalette.panelOuter)
+
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(LegacyPalette.panelMid)
+                    .padding(6)
+
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(LegacyPalette.panelInner)
+                    .padding(12)
+
+                screenBody
+                    .padding(18)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var screenBody: some View {
+        switch currentScreen {
+        case .camera:
+            cameraScreen
+        case .cameraSelector:
+            cameraSelectorScreen
+        case .options:
+            optionsScreen
+        case .settings:
+            settingsScreen
+        case .gallery:
+            LegacyGalleryScreen(
+                selectedAssetID: $gallerySelectedAssetID,
+                presentViewer: $galleryViewerPresented
+            )
+        case .editor:
+            editorPlaceholder
+        }
     }
 
     private var headerStatus: String {
@@ -60,87 +134,68 @@ struct ContentView: View {
         return "READY"
     }
 
-    @ViewBuilder
-    private var screenBody: some View {
-        switch currentScreen {
-        case .camera:
-            cameraScreen
-
-        case .cameraSelector:
-            cameraSelectorScreen
-
-        case .options:
-            optionsScreen
-
-        case .settings:
-            settingsScreen
-
-        case .gallery:
-            LegacyGalleryScreen(
-                selectedAssetID: $gallerySelectedAssetID,
-                presentViewer: $galleryViewerPresented
-            )
-
-        case .editor:
-            placeholderScreen(
-                title: "Редактор",
-                lines: [
-                    "Сюда потом перенесём логику редактирования фото.",
-                    "Отдельным экраном, как в старом приложении."
-                ]
-            )
-
-        case .themes:
-            themesScreen
-        }
-    }
-
     private var cameraScreen: some View {
         VStack(spacing: 10) {
             HStack(spacing: 6) {
-                legacyTab(title: "CAM", isActive: true) { }
-                legacyTab(title: "OPT", isActive: false) { currentScreen = .options }
-                legacyTab(title: "GAL", isActive: false) { currentScreen = .gallery }
-                legacyTab(title: "THM", isActive: false) { currentScreen = .themes }
+                topMiniTab("CAM", active: true) { }
+                topMiniTab("OPT", active: false) { currentScreen = .options }
+                topMiniTab("GAL", active: false) { currentScreen = .gallery }
+                topMiniTab("SET", active: false) { currentScreen = .settings }
             }
 
             previewBlock
                 .frame(maxWidth: .infinity)
                 .frame(height: 300)
-                .background(LegacyPalette.previewFrame)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(LegacyPalette.frameBorder, lineWidth: 3)
-                )
 
             HStack(spacing: 8) {
-                LegacyValueTile(title: "РЕЖИМ", value: captureMode.rawValue) {
+                infoCell(title: "MODE", value: captureMode.rawValue) {
                     guard !camera.isRecording else { return }
                     cycleCaptureMode()
                 }
 
-                LegacyValueTile(title: "ПРОФИЛЬ", value: camera.selectedPreset.shortTitle) {
+                infoCell(title: "CAM", value: camera.selectedPreset.shortTitle) {
                     currentScreen = .cameraSelector
                 }
 
-                LegacyValueTile(title: "ОПЦИИ", value: "ОТКРЫТЬ") {
-                    currentScreen = .options
+                infoCell(title: "FPS", value: "\(camera.selectedPreviewFPS)") {
+                    cycleFPS()
                 }
             }
 
             HStack(spacing: 8) {
-                LegacyToggleTile(title: "RETRO", isOn: $camera.useRetroFilter)
-                LegacyToggleTile(title: "ДАТА", isOn: $camera.addDateStamp)
+                toggleCell(title: "RETRO", isOn: $camera.useRetroFilter)
+                toggleCell(title: "DATE", isOn: $camera.addDateStamp)
+
+                if captureMode == .photo {
+                    infoCell(title: "FLASH", value: camera.photoFlashMode.title) {
+                        cycleFlash()
+                    }
+                } else {
+                    infoCell(title: "VIDEO", value: camera.isRecording ? "REC" : "READY") { }
+                }
+            }
+
+            HStack(spacing: 8) {
+                infoCell(title: "ASPECT", value: camera.captureAspect.title) {
+                    cycleAspect()
+                }
+
+                infoCell(title: "ZOOM", value: String(format: "%.1fx", camera.zoomFactor)) {
+                    currentScreen = .settings
+                }
+
+                infoCell(title: "MENU", value: "OPEN") {
+                    currentScreen = .options
+                }
             }
 
             HStack(spacing: 8) {
                 Button {
                     camera.switchCamera()
                 } label: {
-                    LegacyActionButtonLabel(
-                        titleTop: "СМЕНА",
-                        titleBottom: "КАМЕРЫ",
+                    actionButtonLabel(
+                        top: "SWITCH",
+                        bottom: "CAMERA",
                         dark: false
                     )
                 }
@@ -154,9 +209,9 @@ struct ContentView: View {
                         camera.toggleRecording()
                     }
                 } label: {
-                    LegacyActionButtonLabel(
-                        titleTop: captureMode == .video ? (camera.isRecording ? "STOP" : "REC") : "SHOT",
-                        titleBottom: captureMode == .video ? "VIDEO" : "PHOTO",
+                    actionButtonLabel(
+                        top: captureMode == .video ? (camera.isRecording ? "STOP" : "REC") : "SHOT",
+                        bottom: captureMode == .video ? "VIDEO" : "PHOTO",
                         dark: true
                     )
                 }
@@ -165,9 +220,9 @@ struct ContentView: View {
                 Button {
                     currentScreen = .settings
                 } label: {
-                    LegacyActionButtonLabel(
-                        titleTop: "ПОЛНЫЕ",
-                        titleBottom: "НАСТРОЙКИ",
+                    actionButtonLabel(
+                        top: "FULL",
+                        bottom: "SETTINGS",
                         dark: false
                     )
                 }
@@ -176,33 +231,18 @@ struct ContentView: View {
         }
     }
 
-    private func legacyTab(title: String, isActive: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 11, weight: .heavy, design: .monospaced))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 7)
-                .background(isActive ? LegacyPalette.active : LegacyPalette.soft)
-                .foregroundStyle(isActive ? LegacyPalette.activeText : LegacyPalette.ink)
-                .overlay(
-                    Rectangle()
-                        .fill(isActive ? Color.white.opacity(0.08) : .clear)
-                        .frame(height: 1),
-                    alignment: .top
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-        }
-        .buttonStyle(.plain)
-    }
-
     private var previewBlock: some View {
         ZStack {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(LegacyPalette.previewFrame)
+
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(LegacyPalette.previewInset)
+                .padding(6)
 
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.black)
-                .padding(8)
+                .fill(.black)
+                .padding(10)
 
             ZStack(alignment: .topLeading) {
                 if let previewImage = camera.previewImage {
@@ -214,50 +254,55 @@ struct ContentView: View {
                             .clipped()
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .padding(8)
+                    .padding(10)
                 } else {
                     CameraPreview(session: camera.session)
                         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .padding(8)
+                        .padding(10)
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
-                    LegacyInfoBadge(title: "MODEL", value: camera.selectedPreset.title)
-                    LegacyInfoBadge(title: "MODE", value: captureMode.rawValue.uppercased())
-                    LegacyInfoBadge(title: "FPS", value: "\(camera.selectedPreviewFPS)")
+                    previewBadge("MODEL", camera.selectedPreset.title)
+                    previewBadge("MODE", captureMode.rawValue.uppercased())
+                    previewBadge("FPS", "\(camera.selectedPreviewFPS)")
+                    previewBadge("SIZE", camera.captureAspect.title.uppercased())
 
                     if captureMode == .video && camera.isRecording {
-                        LegacyInfoBadge(title: "STATE", value: "REC")
+                        previewBadge("STATE", "REC")
                     }
                 }
-                .padding(14)
+                .padding(16)
             }
 
             VStack {
                 Spacer()
                 HStack {
                     Spacer()
-                    Text(camera.captureAspect.title.uppercased())
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    Text("0.3MP CAM")
+                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
                         .foregroundStyle(LegacyPalette.previewText)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.black.opacity(0.72))
+                        .background(Color.black.opacity(0.70))
                         .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-                        .padding(14)
+                        .padding(16)
                 }
             }
         }
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(LegacyPalette.previewStroke, lineWidth: 3)
+        )
     }
 
     private var cameraSelectorScreen: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            LegacySectionTitle(title: "Выбор камеры")
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("Выбор камеры")
 
             ScrollView {
                 VStack(spacing: 8) {
                     ForEach(RetroPreset.allCases) { preset in
-                        LegacyMenuRow(
+                        menuRow(
                             title: preset.title,
                             subtitle: cameraProfileSubtitle(for: preset),
                             isSelected: preset == camera.selectedPreset
@@ -280,7 +325,7 @@ struct ContentView: View {
         case .oldPhone:
             return "Главный режим 0.3MP"
         case .nokia6230i:
-            return "1.3MP с жёсткой обработкой"
+            return "1.3MP жёсткая обработка"
         case .n73:
             return "Более чистая 3.2MP картинка"
         }
@@ -288,69 +333,58 @@ struct ContentView: View {
 
     private var optionsScreen: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                LegacySectionTitle(title: "Быстрые опции")
+            VStack(alignment: .leading, spacing: 10) {
+                sectionTitle("Быстрые опции")
 
-                LegacyCard {
-                    VStack(spacing: 10) {
+                card {
+                    VStack(spacing: 8) {
                         HStack(spacing: 8) {
-                            LegacyValueTile(title: "РЕЖИМ", value: captureMode.rawValue) {
+                            infoCell(title: "MODE", value: captureMode.rawValue) {
                                 guard !camera.isRecording else { return }
                                 cycleCaptureMode()
                             }
 
-                            LegacyValueTile(title: "FPS", value: "\(camera.selectedPreviewFPS)") {
+                            infoCell(title: "FPS", value: "\(camera.selectedPreviewFPS)") {
                                 cycleFPS()
                             }
 
-                            LegacyValueTile(title: "ФОРМАТ", value: camera.captureAspect.title) {
+                            infoCell(title: "ASPECT", value: camera.captureAspect.title) {
                                 cycleAspect()
                             }
                         }
 
                         HStack(spacing: 8) {
-                            LegacyToggleTile(title: "RETRO", isOn: $camera.useRetroFilter)
-                            LegacyToggleTile(title: "ДАТА", isOn: $camera.addDateStamp)
-                        }
+                            toggleCell(title: "RETRO", isOn: $camera.useRetroFilter)
+                            toggleCell(title: "DATE", isOn: $camera.addDateStamp)
 
-                        if captureMode == .photo {
-                            HStack(spacing: 8) {
-                                LegacyValueTile(title: "FLASH", value: camera.photoFlashMode.title) {
+                            if captureMode == .photo {
+                                infoCell(title: "FLASH", value: camera.photoFlashMode.title) {
                                     cycleFlash()
                                 }
-
-                                LegacyValueTile(title: "ПРОФИЛЬ", value: camera.selectedPreset.shortTitle) {
-                                    currentScreen = .cameraSelector
-                                }
-                            }
-                        } else {
-                            HStack(spacing: 8) {
-                                LegacyValueTile(title: "ВИДЕО", value: camera.isRecording ? "REC" : "READY") { }
-                                LegacyValueTile(title: "ПРОФИЛЬ", value: camera.selectedPreset.shortTitle) {
-                                    currentScreen = .cameraSelector
-                                }
+                            } else {
+                                infoCell(title: "VIDEO", value: camera.isRecording ? "REC" : "READY") { }
                             }
                         }
                     }
                 }
 
-                LegacySectionTitle(title: "Меню")
+                sectionTitle("Меню")
 
                 VStack(spacing: 8) {
-                    LegacyMenuRow(title: "Выбор камеры", subtitle: "Список профилей") {
+                    menuRow(title: "Выбор камеры", subtitle: "Список профилей") {
                         currentScreen = .cameraSelector
                     }
 
-                    LegacyMenuRow(title: "Полные настройки", subtitle: "Оптика, экспозиция, формат") {
+                    menuRow(title: "Полные настройки", subtitle: "Оптика и экспозиция") {
                         currentScreen = .settings
                     }
 
-                    LegacyMenuRow(title: "Темы", subtitle: "Оформление оболочки") {
-                        currentScreen = .themes
+                    menuRow(title: "Галерея", subtitle: "Фото и видео внутри приложения") {
+                        currentScreen = .gallery
                     }
 
-                    LegacyMenuRow(title: "Галерея", subtitle: "Фото и видео внутри приложения") {
-                        currentScreen = .gallery
+                    menuRow(title: "Редактор", subtitle: "Заглушка под старую логику") {
+                        currentScreen = .editor
                     }
                 }
             }
@@ -359,10 +393,10 @@ struct ContentView: View {
 
     private var settingsScreen: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                LegacySectionTitle(title: "Режим съёмки")
+            VStack(alignment: .leading, spacing: 10) {
+                sectionTitle("Режим съёмки")
 
-                LegacyCard {
+                card {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("FPS: \(camera.selectedPreviewFPS)")
                             .font(.system(size: 13, weight: .bold, design: .monospaced))
@@ -399,9 +433,9 @@ struct ContentView: View {
                 }
 
                 if captureMode == .photo {
-                    LegacySectionTitle(title: "Фото")
+                    sectionTitle("Фото")
 
-                    LegacyCard {
+                    card {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Вспышка: \(camera.photoFlashMode.title)")
                                 .font(.system(size: 13, weight: .bold, design: .monospaced))
@@ -422,9 +456,9 @@ struct ContentView: View {
                     }
                 }
 
-                LegacySectionTitle(title: "Оптика")
+                sectionTitle("Оптика")
 
-                LegacyCard {
+                card {
                     VStack(alignment: .leading, spacing: 14) {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
@@ -472,9 +506,9 @@ struct ContentView: View {
                     }
                 }
 
-                LegacySectionTitle(title: "Экспозиция")
+                sectionTitle("Экспозиция")
 
-                LegacyCard {
+                card {
                     VStack(alignment: .leading, spacing: 14) {
                         Toggle(
                             "Ручная экспозиция",
@@ -525,40 +559,17 @@ struct ContentView: View {
         }
     }
 
-    private var themesScreen: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                LegacySectionTitle(title: "Темы")
+    private var editorPlaceholder: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("Редактор")
 
-                LegacyCard {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Экран тем уже выделен как отдельный модуль.")
-                            .font(.system(size: 14, weight: .bold))
-
-                        Text("Следующим шагом сюда можно добавить реальное переключение оболочки.")
-                            .font(.system(size: 13))
-                    }
-                }
-
-                VStack(spacing: 8) {
-                    LegacyMenuRow(title: "Classic Green", subtitle: "Базовая тема оболочки", isSelected: true) { }
-                    LegacyMenuRow(title: "Dark Steel", subtitle: "Тёмная телефонная тема") { }
-                    LegacyMenuRow(title: "Blue Menu", subtitle: "Псевдо Series 40") { }
-                }
-            }
-        }
-    }
-
-    private func placeholderScreen(title: String, lines: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            LegacySectionTitle(title: title)
-
-            LegacyCard {
+            card {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(lines, id: \.self) { line in
-                        Text("• \(line)")
-                            .font(.system(size: 14, weight: .medium))
-                    }
+                    Text("Пока заглушка.")
+                        .font(.system(size: 15, weight: .bold))
+
+                    Text("Потом сюда можно перенести старую логику редактирования фото.")
+                        .font(.system(size: 13, weight: .medium))
                 }
             }
 
@@ -571,7 +582,7 @@ struct ContentView: View {
                     .font(.system(size: 15, weight: .bold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(LegacyPalette.active)
+                    .background(Color.black)
                     .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
@@ -580,10 +591,53 @@ struct ContentView: View {
         .foregroundStyle(.black)
     }
 
+    private var softKeyBar: some View {
+        HStack {
+            Button {
+                leftSoftKeyAction()
+            } label: {
+                Text(leftSoftKeyTitle)
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(.white)
+            }
+
+            Spacer()
+
+            Button {
+                centerSoftKeyAction()
+            } label: {
+                Text(centerSoftKeyTitle)
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(.white)
+            }
+
+            Spacer()
+
+            Button {
+                rightSoftKeyAction()
+            } label: {
+                Text(rightSoftKeyTitle)
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(.white)
+            }
+        }
+        .padding(.horizontal, 18)
+        .frame(height: 42)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.black)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.white.opacity(0.05), lineWidth: 1)
+        )
+        .padding(.top, 8)
+    }
+
     private var leftSoftKeyTitle: String {
         switch currentScreen {
         case .camera:
-            return "Опции"
+            return "Галерея"
         default:
             return "Назад"
         }
@@ -604,9 +658,7 @@ struct ContentView: View {
         case .gallery:
             return gallerySelectedAssetID == nil ? "Выбрать" : "Открыть"
         case .editor:
-            return "Применить"
-        case .themes:
-            return "Выбрать"
+            return "Камера"
         }
     }
 
@@ -615,7 +667,7 @@ struct ContentView: View {
         case .camera:
             return "Меню"
         case .cameraSelector:
-            return "Камера"
+            return "Опции"
         case .options:
             return "Настр."
         case .settings:
@@ -624,15 +676,13 @@ struct ContentView: View {
             return "Меню"
         case .editor:
             return "Меню"
-        case .themes:
-            return "Меню"
         }
     }
 
     private func leftSoftKeyAction() {
         switch currentScreen {
         case .camera:
-            currentScreen = .options
+            currentScreen = .gallery
         default:
             currentScreen = .camera
         }
@@ -650,34 +700,30 @@ struct ContentView: View {
         case .cameraSelector:
             currentScreen = .camera
 
-        case .options, .settings:
+        case .options, .settings, .editor:
             currentScreen = .camera
 
         case .gallery:
             if gallerySelectedAssetID != nil {
                 galleryViewerPresented = true
             }
-
-        case .editor:
-            break
-
-        case .themes:
-            break
         }
     }
 
     private func rightSoftKeyAction() {
         switch currentScreen {
         case .camera:
-            currentScreen = .settings
+            currentScreen = .options
         case .cameraSelector:
-            currentScreen = .camera
+            currentScreen = .options
         case .options:
             currentScreen = .settings
         case .settings:
             currentScreen = .options
-        case .gallery, .editor, .themes:
-            currentScreen = .settings
+        case .gallery:
+            currentScreen = .options
+        case .editor:
+            currentScreen = .options
         }
     }
 
@@ -719,155 +765,29 @@ struct ContentView: View {
         let next = all[(index + 1) % all.count]
         camera.updateFlashMode(next)
     }
-}
 
-enum LegacyPalette {
-    static let shellOuter = Color(red: 0.08, green: 0.09, blue: 0.10)
-    static let shellTop = Color(red: 0.23, green: 0.25, blue: 0.27)
-    static let shellBottom = Color(red: 0.11, green: 0.12, blue: 0.13)
-
-    static let shellInner = Color(red: 0.54, green: 0.58, blue: 0.49)
-    static let shellEdge = Color(red: 0.32, green: 0.35, blue: 0.30)
-
-    static let panel = Color(red: 0.79, green: 0.84, blue: 0.72)
-    static let panelAlt = Color(red: 0.73, green: 0.79, blue: 0.66)
-    static let panelInset = Color(red: 0.86, green: 0.90, blue: 0.80)
-
-    static let previewFrame = Color(red: 0.33, green: 0.35, blue: 0.32)
-    static let previewInset = Color(red: 0.13, green: 0.14, blue: 0.13)
-    static let frameBorder = Color(red: 0.18, green: 0.19, blue: 0.18)
-
-    static let ink = Color.black
-    static let soft = Color.black.opacity(0.08)
-    static let softStrong = Color.black.opacity(0.14)
-    static let active = Color.black
-    static let activeText = Color.white
-
-    static let previewBadge = Color(red: 0.79, green: 0.92, blue: 0.74)
-    static let previewText = Color(red: 0.84, green: 0.95, blue: 0.80)
-}
-
-struct LegacyShell<Content: View>: View {
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [LegacyPalette.shellTop, LegacyPalette.shellBottom],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                content
-            }
-            .padding(10)
-            .background(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(LegacyPalette.shellInner)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(LegacyPalette.shellEdge, lineWidth: 4)
-            )
-            .padding(8)
-        }
-    }
-}
-
-struct LegacyHeaderBar: View {
-    let title: String
-    let status: String
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text("0.3MP")
-                .font(.system(size: 14, weight: .heavy, design: .monospaced))
-
-            Spacer()
-
-            Text(title.uppercased())
-                .font(.system(size: 12, weight: .heavy, design: .monospaced))
-                .lineLimit(1)
-
-            Spacer()
-
-            Text(status)
-                .font(.system(size: 12, weight: .heavy, design: .monospaced))
-        }
-        .foregroundStyle(LegacyPalette.ink)
-        .padding(.horizontal, 12)
-        .frame(height: 34)
-        .background(
-            LinearGradient(
-                colors: [LegacyPalette.panelInset, LegacyPalette.panelAlt],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.black.opacity(0.18), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .padding(.bottom, 8)
-    }
-}
-
-struct LegacyScreenPanel<Content: View>: View {
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        GeometryReader { _ in
-            ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(LegacyPalette.panelAlt)
-
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(LegacyPalette.panel)
-                    .padding(6)
-
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(LegacyPalette.panelInset)
-                    .padding(12)
-
-                content
-                    .padding(20)
-            }
-        }
-    }
-}
-
-struct LegacySectionTitle: View {
-    let title: String
-
-    var body: some View {
+    private func sectionTitle(_ text: String) -> some View {
         HStack(spacing: 8) {
             Rectangle()
                 .fill(Color.black.opacity(0.25))
                 .frame(width: 10, height: 2)
 
-            Text(title.uppercased())
+            Text(text.uppercased())
                 .font(.system(size: 12, weight: .heavy, design: .monospaced))
 
             Rectangle()
                 .fill(Color.black.opacity(0.25))
                 .frame(height: 2)
         }
-        .foregroundStyle(LegacyPalette.ink.opacity(0.82))
+        .foregroundStyle(Color.black.opacity(0.82))
     }
-}
 
-struct LegacyCard<Content: View>: View {
-    @ViewBuilder var content: Content
-
-    var body: some View {
+    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            content
+            content()
         }
         .padding(12)
-        .background(LegacyPalette.soft)
+        .background(LegacyPalette.card)
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(Color.black.opacity(0.14), lineWidth: 1)
@@ -875,50 +795,34 @@ struct LegacyCard<Content: View>: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .tint(.black)
     }
-}
 
-struct LegacyMenuRow: View {
-    let title: String
-    let subtitle: String?
-    let isSelected: Bool
-    let action: () -> Void
-
-    init(
+    private func menuRow(
         title: String,
-        subtitle: String? = nil,
+        subtitle: String,
         isSelected: Bool = false,
         action: @escaping () -> Void
-    ) {
-        self.title = title
-        self.subtitle = subtitle
-        self.isSelected = isSelected
-        self.action = action
-    }
-
-    var body: some View {
+    ) -> some View {
         Button(action: action) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(.system(size: 15, weight: .bold))
 
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(isSelected ? .white.opacity(0.8) : .black.opacity(0.62))
-                    }
+                    Text(subtitle)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(isSelected ? .white.opacity(0.82) : .black.opacity(0.62))
                 }
 
                 Spacer()
 
                 Text(isSelected ? "OK" : ">")
                     .font(.system(size: 12, weight: .heavy, design: .monospaced))
-                    .frame(width: 26)
+                    .frame(width: 24)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 11)
-            .background(isSelected ? LegacyPalette.active : LegacyPalette.soft)
-            .foregroundStyle(isSelected ? LegacyPalette.activeText : LegacyPalette.ink)
+            .background(isSelected ? Color.black : LegacyPalette.card)
+            .foregroundStyle(isSelected ? .white : .black)
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(isSelected ? Color.clear : Color.black.opacity(0.10), lineWidth: 1)
@@ -927,14 +831,8 @@ struct LegacyMenuRow: View {
         }
         .buttonStyle(.plain)
     }
-}
 
-struct LegacyValueTile: View {
-    let title: String
-    let value: String
-    let action: () -> Void
-
-    var body: some View {
+    private func infoCell(title: String, value: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Text(title)
@@ -945,8 +843,8 @@ struct LegacyValueTile: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
-            .background(LegacyPalette.soft)
-            .foregroundStyle(LegacyPalette.ink)
+            .background(LegacyPalette.card)
+            .foregroundStyle(.black)
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(Color.black.opacity(0.10), lineWidth: 1)
@@ -955,49 +853,39 @@ struct LegacyValueTile: View {
         }
         .buttonStyle(.plain)
     }
-}
 
-struct LegacyToggleTile: View {
-    let title: String
-    @Binding var isOn: Bool
-
-    var body: some View {
+    private func toggleCell(title: String, isOn: Binding<Bool>) -> some View {
         Button {
-            isOn.toggle()
+            isOn.wrappedValue.toggle()
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                    Text(isOn ? "ON" : "OFF")
+                    Text(isOn.wrappedValue ? "ON" : "OFF")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                 }
 
                 Spacer()
 
                 Circle()
-                    .fill(isOn ? Color.white : Color.black.opacity(0.15))
+                    .fill(isOn.wrappedValue ? Color.white : Color.black.opacity(0.15))
                     .frame(width: 12, height: 12)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(isOn ? LegacyPalette.active : LegacyPalette.soft)
-            .foregroundStyle(isOn ? LegacyPalette.activeText : LegacyPalette.ink)
+            .background(isOn.wrappedValue ? Color.black : LegacyPalette.card)
+            .foregroundStyle(isOn.wrappedValue ? .white : .black)
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(isOn ? Color.clear : Color.black.opacity(0.10), lineWidth: 1)
+                    .stroke(isOn.wrappedValue ? Color.clear : Color.black.opacity(0.10), lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
     }
-}
 
-struct LegacyInfoBadge: View {
-    let title: String
-    let value: String
-
-    var body: some View {
+    private func previewBadge(_ title: String, _ value: String) -> some View {
         HStack(spacing: 6) {
             Text(title)
                 .font(.system(size: 9, weight: .heavy, design: .monospaced))
@@ -1011,26 +899,37 @@ struct LegacyInfoBadge: View {
         .background(Color.black.opacity(0.72))
         .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
     }
-}
 
-struct LegacyActionButtonLabel: View {
-    let titleTop: String
-    let titleBottom: String
-    let dark: Bool
-
-    var body: some View {
-        VStack(spacing: 3) {
-            Text(titleTop)
+    private func topMiniTab(_ title: String, active: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
                 .font(.system(size: 11, weight: .heavy, design: .monospaced))
-            Text(titleBottom)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 7)
+                .background(active ? Color.black : LegacyPalette.card)
+                .foregroundStyle(active ? .white : .black)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .stroke(active ? Color.clear : Color.black.opacity(0.10), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func actionButtonLabel(top: String, bottom: String, dark: Bool) -> some View {
+        VStack(spacing: 3) {
+            Text(top)
+                .font(.system(size: 11, weight: .heavy, design: .monospaced))
+            Text(bottom)
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .lineLimit(1)
         }
         .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity)
         .frame(height: 54)
-        .background(dark ? LegacyPalette.active : LegacyPalette.soft)
-        .foregroundStyle(dark ? LegacyPalette.activeText : LegacyPalette.ink)
+        .background(dark ? Color.black : LegacyPalette.card)
+        .foregroundStyle(dark ? .white : .black)
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(dark ? Color.clear : Color.black.opacity(0.10), lineWidth: 1)
@@ -1039,50 +938,26 @@ struct LegacyActionButtonLabel: View {
     }
 }
 
-struct LegacySoftKeyBar: View {
-    let leftTitle: String
-    let centerTitle: String
-    let rightTitle: String
-    let leftAction: () -> Void
-    let centerAction: () -> Void
-    let rightAction: () -> Void
+enum LegacyPalette {
+    static let outer = Color(red: 0.08, green: 0.09, blue: 0.10)
 
-    var body: some View {
-        HStack {
-            Button(action: leftAction) {
-                Text(leftTitle)
-                    .font(.system(size: 13, weight: .heavy))
-                    .foregroundStyle(.white)
-            }
+    static let shell = Color(red: 0.50, green: 0.55, blue: 0.46)
+    static let shellStroke = Color(red: 0.30, green: 0.33, blue: 0.28)
 
-            Spacer()
+    static let panelOuter = Color(red: 0.71, green: 0.77, blue: 0.65)
+    static let panelMid = Color(red: 0.79, green: 0.84, blue: 0.72)
+    static let panelInner = Color(red: 0.87, green: 0.91, blue: 0.82)
+    static let card = Color.black.opacity(0.08)
 
-            Button(action: centerAction) {
-                Text(centerTitle)
-                    .font(.system(size: 13, weight: .heavy))
-                    .foregroundStyle(.white)
-            }
+    static let lcdBright = Color(red: 0.89, green: 0.94, blue: 0.82)
+    static let lcdMid = Color(red: 0.76, green: 0.83, blue: 0.69)
 
-            Spacer()
+    static let previewFrame = Color(red: 0.33, green: 0.35, blue: 0.32)
+    static let previewInset = Color(red: 0.13, green: 0.14, blue: 0.13)
+    static let previewStroke = Color(red: 0.18, green: 0.19, blue: 0.18)
 
-            Button(action: rightAction) {
-                Text(rightTitle)
-                    .font(.system(size: 13, weight: .heavy))
-                    .foregroundStyle(.white)
-            }
-        }
-        .padding(.horizontal, 18)
-        .frame(height: 42)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.black)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.white.opacity(0.05), lineWidth: 1)
-        )
-        .padding(.top, 8)
-    }
+    static let previewBadge = Color(red: 0.80, green: 0.92, blue: 0.76)
+    static let previewText = Color(red: 0.86, green: 0.96, blue: 0.83)
 }
 
 struct LegacyGalleryScreen: View {
@@ -1098,38 +973,23 @@ struct LegacyGalleryScreen: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            LegacySectionTitle(title: "Галерея")
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Rectangle()
+                    .fill(Color.black.opacity(0.25))
+                    .frame(width: 10, height: 2)
 
-            LegacyCard {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(headerTitle)
-                            .font(.system(size: 15, weight: .bold))
+                Text("ГАЛЕРЕЯ")
+                    .font(.system(size: 12, weight: .heavy, design: .monospaced))
 
-                        Text(headerSubtitle)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.black.opacity(0.68))
-                    }
-
-                    Spacer()
-
-                    Button {
-                        model.reloadAssets()
-                    } label: {
-                        Text("Обновить")
-                            .font(.system(size: 12, weight: .bold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(LegacyPalette.softStrong)
-                            .foregroundStyle(LegacyPalette.ink)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                }
+                Rectangle()
+                    .fill(Color.black.opacity(0.25))
+                    .frame(height: 2)
             }
+            .foregroundStyle(Color.black.opacity(0.82))
 
-            content
+            galleryHeader
+            galleryContent
         }
         .onAppear {
             model.requestAccessIfNeeded()
@@ -1154,6 +1014,43 @@ struct LegacyGalleryScreen: View {
         }
     }
 
+    private var galleryHeader: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(headerTitle)
+                        .font(.system(size: 15, weight: .bold))
+
+                    Text(headerSubtitle)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.black.opacity(0.68))
+                }
+
+                Spacer()
+
+                Button {
+                    model.reloadAssets()
+                } label: {
+                    Text("Обновить")
+                        .font(.system(size: 12, weight: .bold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(Color.black.opacity(0.12))
+                        .foregroundStyle(.black)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .background(Color.black.opacity(0.08))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.black.opacity(0.14), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
     private var headerTitle: String {
         switch model.accessState {
         case .idle, .loading:
@@ -1168,22 +1065,18 @@ struct LegacyGalleryScreen: View {
     private var headerSubtitle: String {
         switch model.accessState {
         case .idle, .loading:
-            return "Проверяем разрешение и загружаем последние фото и видео"
+            return "Загрузка последних фото и видео"
         case .denied:
-            return "Проверь разрешение Photo Library и строку доступа в Info.plist"
+            return "Проверь доступ к Photo Library"
         case .limited:
-            return selectedAssetID == nil
-                ? "Ограниченный доступ, файл не выбран"
-                : "Ограниченный доступ, выбран 1 файл"
+            return selectedAssetID == nil ? "Ограниченный доступ" : "Файл выбран"
         case .authorized:
-            return selectedAssetID == nil
-                ? "Ничего не выбрано"
-                : "Файл выбран, можно открыть просмотр"
+            return selectedAssetID == nil ? "Ничего не выбрано" : "Можно открыть просмотр"
         }
     }
 
     @ViewBuilder
-    private var content: some View {
+    private var galleryContent: some View {
         switch model.accessState {
         case .idle, .loading:
             VStack(spacing: 16) {
@@ -1196,41 +1089,51 @@ struct LegacyGalleryScreen: View {
             }
 
         case .denied:
-            LegacyCard {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Доступ к галерее выключен.")
-                        .font(.system(size: 16, weight: .bold))
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Доступ к галерее выключен.")
+                    .font(.system(size: 16, weight: .bold))
 
-                    Text("Проверь разрешение Photo Library и строку доступа в Info.plist.")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.black.opacity(0.75))
+                Text("Нужен доступ к Photo Library и строка NSPhotoLibraryUsageDescription в Info.plist.")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.black.opacity(0.75))
 
-                    Button {
-                        model.requestAccessIfNeeded(forcePrompt: true)
-                    } label: {
-                        Text("Повторить запрос")
-                            .font(.system(size: 14, weight: .bold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color.black)
-                            .foregroundStyle(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
+                Button {
+                    model.requestAccessIfNeeded(forcePrompt: true)
+                } label: {
+                    Text("Повторить запрос")
+                        .font(.system(size: 14, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.black)
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
+                .buttonStyle(.plain)
             }
+            .padding(12)
+            .background(Color.black.opacity(0.08))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.black.opacity(0.14), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
         case .authorized, .limited:
             if model.assets.isEmpty {
-                LegacyCard {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Пока пусто")
-                            .font(.system(size: 16, weight: .bold))
-                        Text("Сделай фото или видео, затем вернись сюда.")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.black.opacity(0.75))
-                    }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Пока пусто")
+                        .font(.system(size: 16, weight: .bold))
+                    Text("Сделай фото или видео, затем вернись сюда.")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.black.opacity(0.75))
                 }
+                .padding(12)
+                .background(Color.black.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.black.opacity(0.14), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             } else {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 8) {
@@ -1441,7 +1344,7 @@ struct LegacyGalleryTile: View {
             ZStack(alignment: .topTrailing) {
                 ZStack(alignment: .bottomLeading) {
                     Rectangle()
-                        .fill(LegacyPalette.softStrong)
+                        .fill(Color.black.opacity(0.14))
 
                     if let thumbnail {
                         Image(uiImage: thumbnail)
@@ -1464,7 +1367,7 @@ struct LegacyGalleryTile: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 4)
                     .background(Color.black.opacity(0.72))
-                    .foregroundStyle(LegacyPalette.previewBadge)
+                    .foregroundStyle(Color(red: 0.80, green: 0.92, blue: 0.76))
                     .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                     .padding(6)
                 }
