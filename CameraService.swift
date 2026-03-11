@@ -356,3 +356,31 @@ extension CameraService: AVCaptureFileOutputRecordingDelegate {
         }
     }
 }
+
+extension CameraService {
+    func fileOutput(_ output: AVCaptureFileOutput,
+                    didStartRecordingTo fileURL: URL,
+                    from connections: [AVCaptureConnection]) {
+        DispatchQueue.main.async {
+            self.isRecording = true
+        }
+    }
+
+    func fileOutput(_ output: AVCaptureFileOutput,
+                    didFinishRecordingTo outputFileURL: URL,
+                    from connections: [AVCaptureConnection],
+                    error: Error?) {
+        DispatchQueue.main.async {
+            self.isRecording = false
+        }
+
+        guard error == nil else { return }
+        guard hasPhotoAccess else { return }
+
+        PHPhotoLibrary.shared().performChanges({
+            PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: outputFileURL)
+        }) { _, _ in
+            try? FileManager.default.removeItem(at: outputFileURL)
+        }
+    }
+}
