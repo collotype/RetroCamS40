@@ -1,10 +1,11 @@
 import UIKit
+import CoreGraphics
 
 extension UIImage {
     func normalized() -> UIImage {
         if imageOrientation == .up { return self }
 
-        let format = UIGraphicsImageRendererFormat()
+        let format = UIGraphicsImageRendererFormat.default()
         format.scale = scale
 
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
@@ -13,93 +14,91 @@ extension UIImage {
         }
     }
 
-    func centerCroppedTo4by3() -> UIImage {
-        let image = normalized()
-        guard let cgImage = image.cgImage else { return image }
-
-        let width = CGFloat(cgImage.width)
-        let height = CGFloat(cgImage.height)
-        let targetAspect: CGFloat = 4.0 / 3.0
-        let currentAspect = width / height
-
-        var cropRect = CGRect(x: 0, y: 0, width: width, height: height)
-
-        if currentAspect > targetAspect {
-            let newWidth = height * targetAspect
-            cropRect.origin.x = (width - newWidth) / 2.0
-            cropRect.size.width = newWidth
-        } else if currentAspect < targetAspect {
-            let newHeight = width / targetAspect
-            cropRect.origin.y = (height - newHeight) / 2.0
-            cropRect.size.height = newHeight
-        }
-
-        guard let cropped = cgImage.cropping(to: cropRect) else { return image }
-        return UIImage(cgImage: cropped, scale: image.scale, orientation: .up)
-    }
-
-    func resized(to size: CGSize) -> UIImage {
-        let format = UIGraphicsImageRendererFormat()
+    func resized(to targetSize: CGSize, interpolation: CGInterpolationQuality = .high) -> UIImage {
+        let format = UIGraphicsImageRendererFormat.default()
         format.scale = 1
 
-        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+        return renderer.image { context in
+            context.cgContext.interpolationQuality = interpolation
+            draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+    }
+
+    func centerCropped(to aspectRatio: CGFloat) -> UIImage {
+        guard let cgImage else { return self }
+
+        let sourceWidth = CGFloat(cgImage.width)
+        let sourceHeight = CGFloat(cgImage.height)
+        let sourceAspect = sourceWidth / max(sourceHeight, 1)
+
+        let cropRect: CGRect
+        if sourceAspect > aspectRatio {
+            let newWidth = sourceHeight * aspectRatio
+            cropRect = CGRect(
+                x: (sourceWidth - newWidth) / 2.0,
+                y: 0,
+                width: newWidth,
+                height: sourceHeight
+            )
+        } else {
+            let newHeight = sourceWidth / aspectRatio
+            cropRect = CGRect(
+                x: 0,
+                y: (sourceHeight - newHeight) / 2.0,
+                width: sourceWidth,
+                height: newHeight
+            )
+        }
+
+        guard let cropped = cgImage.cropping(to: cropRect.integral) else { return self }
+        return UIImage(cgImage: cropped, scale: scale, orientation: .up)
+    }
+
+    func jpegRecompressed(_ quality: CGFloat) -> UIImage {
+        guard let data = jpegData(compressionQuality: quality),
+              let image = UIImage(data: data) else {
+            return self
+        }
+        return image
+    }
+
+    func withStamp(
+        text: String,
+        at point: CGPoint,
+        color: UIColor = UIColor(red: 1.0, green: 0.80, blue: 0.24, alpha: 1.0),
+        fontSize: CGFloat? = nil
+    ) -> UIImage {
+        let resolvedFontSize = fontSize ?? max(12, min(size.width, size.height) * 0.035)
+
+        let renderer = UIGraphicsImageRenderer(size: size)
         return renderer.image { _ in
             draw(in: CGRect(origin: .zero, size: size))
-        }
-    }
 
-    func withDateStamp() -> UIImage {
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
+            let shadow = NSShadow()
+            shadow.shadowColor = UIColor.black.withAlphaComponent(0.82)
+            shadow.shadowOffset = CGSize(width: 1, height: 1)
+            shadow.shadowBlurRadius = 0
 
-        let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        let text = DateStampFormatter.shared.string(from: Date())
-
-        return renderer.image { _ in
-            self.draw(in: CGRect(origin: .zero, size: size))
-
-            let padding: CGFloat = 10
-            let font = UIFont.monospacedDigitSystemFont(ofSize: 18, weight: .regular)
-
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: UIColor(white: 1.0, alpha: 0.95),
-                .shadow: {
-                    let shadow = NSShadow()
-                    shadow.shadowColor = UIColor.black.withAlphaComponent(0.8)
-                    shadow.shadowBlurRadius = 2
-                    shadow.shadowOffset = CGSize(width: 1, height: 1)
-                    return shadow
-                }()
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.monospacedDigitSystemFont(ofSize: resolvedFontSize, weight: .bold),
+                .foregroundColor: color,
+                .shadow: shadow
             ]
 
-            let string = NSAttributedString(string: text, attributes: attrs)
-            let textSize = string.size()
-
-            let rect = CGRect(
-                x: max(padding, size.width - textSize.width - padding),
-                y: max(padding, size.height - textSize.height - padding),
-                width: textSize.width,
-                height: textSize.height
-            )
-
-            string.draw(in: rect)
+            let attributed = NSAttributedString(string: text, attributes: attributes)
+            attributed.draw(at: point)
         }
     }
-}
 
-private final class DateStampFormatter {
-    static let shared = DateStampFormatter()
+    func nearestNeighborScaled(to targetSize: CGSize) -> UIImage {
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
 
-    private let formatter: DateFormatter
-
-    private init() {
-        formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ru_RU")
-        formatter.dateFormat = "dd/MM/yy HH:mm"
-    }
-
-    func string(from date: Date) -> String {
-        formatter.string(from: date)
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+        return renderer.image { context in
+            context.cgContext.interpolationQuality = .none
+            draw(in: CGRect(origin: .zero, size: targetSize))
+        }
     }
 }
