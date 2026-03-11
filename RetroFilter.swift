@@ -2,6 +2,8 @@ import Foundation
 import CoreImage
 import UIKit
 
+// MARK: - Core app-facing enums kept stable for compatibility
+
 enum CaptureAspect: String, CaseIterable, Identifiable {
     case full
     case fourThree
@@ -75,10 +77,267 @@ enum RetroPreset: String, CaseIterable, Identifiable {
             return "N73"
         }
     }
+
+    /// Дальше в новом UI лучше использовать именно это, а не `allCases`.
+    static var mainSelectableCases: [RetroPreset] {
+        [.oldPhone, .nokia6230i, .n73]
+    }
+}
+
+// MARK: - IPA-style camera settings model
+
+enum RetroImageQuality: String, CaseIterable, Identifiable {
+    case economy
+    case standard
+    case fine
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .economy:
+            return "Economy"
+        case .standard:
+            return "Standard"
+        case .fine:
+            return "Fine"
+        }
+    }
+
+    var jpegCompression: CGFloat {
+        switch self {
+        case .economy:
+            return 0.34
+        case .standard:
+            return 0.48
+        case .fine:
+            return 0.66
+        }
+    }
+
+    var recompressionPasses: Int {
+        switch self {
+        case .economy:
+            return 2
+        case .standard:
+            return 2
+        case .fine:
+            return 1
+        }
+    }
+
+    var previewCompression: CGFloat {
+        switch self {
+        case .economy:
+            return 0.42
+        case .standard:
+            return 0.56
+        case .fine:
+            return 0.72
+        }
+    }
+}
+
+enum RetroImageSize: String, CaseIterable, Identifiable {
+    case vga640x480
+    case sxga1280x960
+    case uxga1600x1200
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .vga640x480:
+            return "640×480"
+        case .sxga1280x960:
+            return "1280×960"
+        case .uxga1600x1200:
+            return "1600×1200"
+        }
+    }
+
+    var size: CGSize {
+        switch self {
+        case .vga640x480:
+            return CGSize(width: 640, height: 480)
+        case .sxga1280x960:
+            return CGSize(width: 1280, height: 960)
+        case .uxga1600x1200:
+            return CGSize(width: 1600, height: 1200)
+        }
+    }
+}
+
+enum RetroProcessorMode: String, CaseIterable, Identifiable {
+    case realistic
+    case balanced
+    case enhanced
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .realistic:
+            return "Realistic"
+        case .balanced:
+            return "Balanced"
+        case .enhanced:
+            return "Enhanced"
+        }
+    }
+}
+
+struct RetroCameraProfile: Identifiable {
+    let preset: RetroPreset
+    let imageQuality: RetroImageQuality
+    let imageSize: RetroImageSize
+    let processorMode: RetroProcessorMode
+    let previewBaseSize: CGSize
+    let sensorSampleSize: CGSize
+    let displayUpscaleSize: CGSize
+    let saturation: CGFloat
+    let contrast: CGFloat
+    let brightness: CGFloat
+    let highlightRollOff: CGFloat
+    let shadowLift: CGFloat
+    let sharpen: CGFloat
+    let softness: CGFloat
+    let noiseOpacity: CGFloat
+    let bandingOpacity: CGFloat
+    let fringeOpacity: CGFloat
+    let scanlineOpacity: CGFloat
+    let vignette: CGFloat
+    let dateStampColor: UIColor
+
+    var id: String { preset.rawValue }
 }
 
 enum RetroFilter {
     private static let context = CIContext(options: nil)
+
+    // MARK: - Public profile access
+
+    static func profile(for preset: RetroPreset) -> RetroCameraProfile {
+        switch preset {
+        case .oldPhone:
+            return RetroCameraProfile(
+                preset: .oldPhone,
+                imageQuality: .economy,
+                imageSize: .vga640x480,
+                processorMode: .realistic,
+                previewBaseSize: CGSize(width: 320, height: 240),
+                sensorSampleSize: CGSize(width: 240, height: 180),
+                displayUpscaleSize: CGSize(width: 640, height: 480),
+                saturation: 0.76,
+                contrast: 1.20,
+                brightness: -0.03,
+                highlightRollOff: 0.77,
+                shadowLift: 0.16,
+                sharpen: 0.18,
+                softness: 0.85,
+                noiseOpacity: 0.075,
+                bandingOpacity: 0.09,
+                fringeOpacity: 0.06,
+                scanlineOpacity: 0.05,
+                vignette: 0.16,
+                dateStampColor: UIColor(red: 1.0, green: 0.77, blue: 0.18, alpha: 1.0)
+            )
+        case .nokia6230i:
+            return RetroCameraProfile(
+                preset: .nokia6230i,
+                imageQuality: .standard,
+                imageSize: .sxga1280x960,
+                processorMode: .balanced,
+                previewBaseSize: CGSize(width: 360, height: 270),
+                sensorSampleSize: CGSize(width: 420, height: 315),
+                displayUpscaleSize: CGSize(width: 1280, height: 960),
+                saturation: 0.92,
+                contrast: 1.16,
+                brightness: -0.015,
+                highlightRollOff: 0.80,
+                shadowLift: 0.22,
+                sharpen: 0.40,
+                softness: 0.40,
+                noiseOpacity: 0.045,
+                bandingOpacity: 0.045,
+                fringeOpacity: 0.04,
+                scanlineOpacity: 0.02,
+                vignette: 0.10,
+                dateStampColor: UIColor(red: 1.0, green: 0.78, blue: 0.24, alpha: 1.0)
+            )
+        case .n73:
+            return RetroCameraProfile(
+                preset: .n73,
+                imageQuality: .fine,
+                imageSize: .uxga1600x1200,
+                processorMode: .enhanced,
+                previewBaseSize: CGSize(width: 420, height: 315),
+                sensorSampleSize: CGSize(width: 640, height: 480),
+                displayUpscaleSize: CGSize(width: 1600, height: 1200),
+                saturation: 1.02,
+                contrast: 1.08,
+                brightness: 0.01,
+                highlightRollOff: 0.84,
+                shadowLift: 0.28,
+                sharpen: 0.48,
+                softness: 0.22,
+                noiseOpacity: 0.02,
+                bandingOpacity: 0.015,
+                fringeOpacity: 0.02,
+                scanlineOpacity: 0.0,
+                vignette: 0.05,
+                dateStampColor: UIColor(red: 1.0, green: 0.80, blue: 0.28, alpha: 1.0)
+            )
+        case .pointAndShoot:
+            // Оставлено только ради совместимости со старым кодом проекта.
+            return RetroCameraProfile(
+                preset: .pointAndShoot,
+                imageQuality: .standard,
+                imageSize: .sxga1280x960,
+                processorMode: .balanced,
+                previewBaseSize: CGSize(width: 360, height: 270),
+                sensorSampleSize: CGSize(width: 520, height: 390),
+                displayUpscaleSize: CGSize(width: 1280, height: 960),
+                saturation: 0.96,
+                contrast: 1.05,
+                brightness: 0.01,
+                highlightRollOff: 0.86,
+                shadowLift: 0.26,
+                sharpen: 0.34,
+                softness: 0.28,
+                noiseOpacity: 0.03,
+                bandingOpacity: 0.01,
+                fringeOpacity: 0.012,
+                scanlineOpacity: 0.0,
+                vignette: 0.07,
+                dateStampColor: UIColor(red: 1.0, green: 0.72, blue: 0.20, alpha: 1.0)
+            )
+        case .vhs:
+            // Оставлено только ради совместимости со старым кодом проекта.
+            return RetroCameraProfile(
+                preset: .vhs,
+                imageQuality: .economy,
+                imageSize: .vga640x480,
+                processorMode: .realistic,
+                previewBaseSize: CGSize(width: 320, height: 240),
+                sensorSampleSize: CGSize(width: 280, height: 210),
+                displayUpscaleSize: CGSize(width: 640, height: 480),
+                saturation: 0.72,
+                contrast: 0.96,
+                brightness: 0.01,
+                highlightRollOff: 0.82,
+                shadowLift: 0.22,
+                sharpen: 0.05,
+                softness: 1.10,
+                noiseOpacity: 0.08,
+                bandingOpacity: 0.11,
+                fringeOpacity: 0.04,
+                scanlineOpacity: 0.16,
+                vignette: 0.12,
+                dateStampColor: UIColor(red: 1.0, green: 0.92, blue: 0.66, alpha: 1.0)
+            )
+        }
+    }
 
     static func makeRetroPhoto(
         from image: UIImage,
@@ -86,14 +345,14 @@ enum RetroFilter {
         aspect: CaptureAspect,
         addDateStamp: Bool
     ) -> UIImage {
-        let base = preparePhotoBase(image, preset: preset, aspect: aspect)
-        let processed = processStillImage(base, preset: preset)
+        let profile = profile(for: preset)
+        let base = preparePhotoBase(image, profile: profile, aspect: aspect)
+        let processed = processStillImage(base, profile: profile)
 
         if addDateStamp {
-            return addOldDateStamp(to: processed, preset: preset)
-        } else {
-            return processed
+            return addOldDateStamp(to: processed, color: profile.dateStampColor)
         }
+        return processed
     }
 
     static func normalizePhoto(
@@ -103,10 +362,12 @@ enum RetroFilter {
     ) -> UIImage {
         let base = prepareNormalizedPhoto(image, aspect: aspect)
         if addDateStamp {
-            return addOldDateStamp(to: base, preset: .oldPhone)
-        } else {
-            return base
+            return addOldDateStamp(
+                to: base,
+                color: UIColor(red: 1.0, green: 0.77, blue: 0.18, alpha: 1.0)
+            )
         }
+        return base
     }
 
     static func makePreviewImage(
@@ -115,33 +376,32 @@ enum RetroFilter {
         useRetro: Bool,
         context: CIContext
     ) -> UIImage? {
-        let prepared = previewBase(from: image)
+        let profile = profile(for: preset)
+        let prepared = previewBase(from: image, profile: profile)
 
-        let output: CIImage
+        let ciOutput: CIImage
         if useRetro {
-            output = applyCoreImageLook(to: prepared, preset: preset, forPreview: true)
+            ciOutput = applyCoreImageLook(to: prepared, profile: profile, forPreview: true)
         } else {
-            output = prepared
+            ciOutput = prepared
         }
 
-        guard let cg = context.createCGImage(output, from: output.extent) else {
+        guard let cg = context.createCGImage(ciOutput, from: ciOutput.extent) else {
             return nil
         }
 
-        var ui = UIImage(cgImage: cg)
-
+        var preview = UIImage(cgImage: cg)
         if useRetro {
-            ui = postPreviewPass(ui, preset: preset)
+            preview = postPreviewPass(preview, profile: profile)
         }
-
-        return ui
+        return preview
     }
 
     // MARK: - Photo pipeline
 
     private static func preparePhotoBase(
         _ image: UIImage,
-        preset: RetroPreset,
+        profile: RetroCameraProfile,
         aspect: CaptureAspect
     ) -> UIImage {
         let normalized = normalizedImage(image)
@@ -149,13 +409,13 @@ enum RetroFilter {
         let cropped: UIImage
         switch aspect {
         case .full:
-            cropped = centerCrop(normalized, targetAspect: normalized.size.width / max(normalized.size.height, 1))
+            cropped = normalized
         case .fourThree:
             cropped = centerCrop(normalized, targetAspect: 4.0 / 3.0)
         }
 
-        let targetSize = targetPhotoSize(for: preset)
-        return resize(cropped, to: targetSize, quality: .medium)
+        let sensorSized = resize(cropped, to: profile.imageSize.size, quality: .medium)
+        return sensorSized
     }
 
     private static func prepareNormalizedPhoto(
@@ -175,99 +435,60 @@ enum RetroFilter {
         return resize(cropped, to: CGSize(width: 640, height: 480), quality: .high)
     }
 
-    private static func targetPhotoSize(for preset: RetroPreset) -> CGSize {
-        switch preset {
-        case .oldPhone:
-            return CGSize(width: 640, height: 480)
-        case .pointAndShoot:
-            return CGSize(width: 960, height: 720)
-        case .vhs:
-            return CGSize(width: 640, height: 480)
-        case .nokia6230i:
-            return CGSize(width: 1280, height: 960)
-        case .n73:
-            return CGSize(width: 1600, height: 1200)
-        }
-    }
-
-    private static func processStillImage(_ image: UIImage, preset: RetroPreset) -> UIImage {
+    private static func processStillImage(_ image: UIImage, profile: RetroCameraProfile) -> UIImage {
         guard let input = CIImage(image: image) else { return image }
 
-        let ci = applyCoreImageLook(to: input, preset: preset, forPreview: false)
-        guard let cg = context.createCGImage(ci, from: ci.extent) else { return image }
-
-        var ui = UIImage(cgImage: cg)
-
-        switch preset {
-        case .oldPhone:
-            ui = emulateOldPhone(ui)
-        case .vhs:
-            ui = emulateVHS(ui)
-        case .pointAndShoot:
-            ui = emulatePointAndShoot(ui)
-        case .nokia6230i:
-            ui = emulate6230i(ui)
-        case .n73:
-            ui = emulateN73(ui)
+        let filtered = applyCoreImageLook(to: input, profile: profile, forPreview: false)
+        guard let cg = context.createCGImage(filtered, from: filtered.extent) else {
+            return image
         }
 
-        return ui
+        var output = UIImage(cgImage: cg)
+        output = emulateSensorPipeline(output, profile: profile)
+        output = applyJPEGProfile(output, quality: profile.imageQuality)
+        return output
     }
 
     // MARK: - Preview pipeline
 
-    private static func previewBase(from image: CIImage) -> CIImage {
+    private static func previewBase(from image: CIImage, profile: RetroCameraProfile) -> CIImage {
         let extent = image.extent.integral
         guard extent.width > 0, extent.height > 0 else { return image }
 
-        let targetWidth: CGFloat = 360
-        let scale = targetWidth / extent.width
+        let targetWidth = max(profile.previewBaseSize.width, 1)
+        let scale = targetWidth / max(extent.width, 1)
         return image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
     }
 
-    private static func postPreviewPass(_ image: UIImage, preset: RetroPreset) -> UIImage {
-        switch preset {
-        case .oldPhone:
-            return resizeWithNearestNeighbor(
-                resize(image, to: CGSize(width: 240, height: 180), quality: .low),
-                to: CGSize(width: 360, height: 270)
-            )
-        case .vhs:
-            return overlayScanlines(on: image, opacity: 0.16, lineSpacing: 4)
-        case .pointAndShoot:
-            return recompressJPEG(image, quality: 0.72)
-        case .nokia6230i:
-            return recompressJPEG(image, quality: 0.78)
-        case .n73:
-            return recompressJPEG(image, quality: 0.86)
+    private static func postPreviewPass(_ image: UIImage, profile: RetroCameraProfile) -> UIImage {
+        var output = image
+
+        let downsampled = resize(output, to: profile.sensorSampleSize, quality: .low)
+        output = resizeWithNearestNeighbor(downsampled, to: profile.previewBaseSize)
+
+        if profile.scanlineOpacity > 0.001 {
+            output = overlayScanlines(on: output, opacity: profile.scanlineOpacity, lineSpacing: 4)
         }
+
+        output = addBandNoise(on: output, opacity: profile.bandingOpacity * 0.7)
+        output = addChromaticFringe(on: output, amount: profile.fringeOpacity * 0.85)
+        output = overlayNoise(on: output, opacity: profile.noiseOpacity * 0.7, monochrome: false)
+        output = applyJPEGPreviewPass(output, quality: profile.imageQuality)
+        return output
     }
 
-    // MARK: - CI look
+    // MARK: - CoreImage tone shaping
 
     private static func applyCoreImageLook(
         to image: CIImage,
-        preset: RetroPreset,
+        profile: RetroCameraProfile,
         forPreview: Bool
     ) -> CIImage {
-        switch preset {
-        case .oldPhone:
-            return oldPhoneLook(image, forPreview: forPreview)
-        case .vhs:
-            return vhsLook(image, forPreview: forPreview)
-        case .pointAndShoot:
-            return pointAndShootLook(image, forPreview: forPreview)
-        case .nokia6230i:
-            return nokia6230iLook(image, forPreview: forPreview)
-        case .n73:
-            return n73Look(image, forPreview: forPreview)
-        }
-    }
-
-    private static func oldPhoneLook(_ image: CIImage, forPreview: Bool) -> CIImage {
-        let saturation: CGFloat = forPreview ? 0.80 : 0.72
-        let contrast: CGFloat = forPreview ? 1.12 : 1.18
-        let brightness: CGFloat = forPreview ? -0.01 : -0.03
+        let saturation = forPreview ? profile.saturation + 0.04 : profile.saturation
+        let contrast = forPreview ? profile.contrast - 0.03 : profile.contrast
+        let brightness = forPreview ? profile.brightness + 0.01 : profile.brightness
+        let sharpen = forPreview ? max(profile.sharpen - 0.06, 0) : profile.sharpen
+        let softness = forPreview ? max(profile.softness - 0.15, 0) : profile.softness
 
         var output = image
             .applyingFilter("CIColorControls", parameters: [
@@ -276,179 +497,132 @@ enum RetroFilter {
                 kCIInputBrightnessKey: brightness
             ])
             .applyingFilter("CIHighlightShadowAdjust", parameters: [
-                "inputHighlightAmount": 0.75,
-                "inputShadowAmount": 0.18
-            ])
-            .applyingFilter("CISharpenLuminance", parameters: [
-                kCIInputSharpnessKey: 0.22
+                "inputHighlightAmount": profile.highlightRollOff,
+                "inputShadowAmount": profile.shadowLift
             ])
 
-        output = output.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: 1.02, y: 0.00, z: 0.00, w: 0.0),
-            "inputGVector": CIVector(x: 0.00, y: 1.00, z: 0.00, w: 0.0),
-            "inputBVector": CIVector(x: 0.00, y: 0.02, z: 0.93, w: 0.0)
-        ])
+        if sharpen > 0.001 {
+            output = output.applyingFilter("CISharpenLuminance", parameters: [
+                kCIInputSharpnessKey: sharpen
+            ])
+        }
 
+        if softness > 0.001 {
+            output = output
+                .applyingFilter("CIGaussianBlur", parameters: [
+                    kCIInputRadiusKey: softness
+                ])
+            output = cropToExtent(output, extent: image.extent)
+        }
+
+        output = applyColorSignature(to: output, preset: profile.preset)
         return output
     }
 
-    private static func vhsLook(_ image: CIImage, forPreview: Bool) -> CIImage {
-        let blurRadius: CGFloat = forPreview ? 0.7 : 1.2
-        let saturation: CGFloat = forPreview ? 0.78 : 0.70
+    private static func applyColorSignature(to image: CIImage, preset: RetroPreset) -> CIImage {
+        switch preset {
+        case .oldPhone:
+            return image.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 1.01, y: 0.00, z: 0.00, w: 0.0),
+                "inputGVector": CIVector(x: 0.01, y: 0.98, z: 0.00, w: 0.0),
+                "inputBVector": CIVector(x: 0.00, y: 0.03, z: 0.91, w: 0.0)
+            ])
+        case .nokia6230i:
+            return image.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 1.02, y: 0.01, z: 0.00, w: 0.0),
+                "inputGVector": CIVector(x: 0.00, y: 1.00, z: 0.00, w: 0.0),
+                "inputBVector": CIVector(x: 0.00, y: 0.01, z: 0.95, w: 0.0)
+            ])
+        case .n73:
+            return image.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 1.01, y: 0.00, z: 0.00, w: 0.0),
+                "inputGVector": CIVector(x: 0.00, y: 1.01, z: 0.00, w: 0.0),
+                "inputBVector": CIVector(x: 0.00, y: 0.01, z: 0.98, w: 0.0)
+            ])
+        case .pointAndShoot:
+            return image.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 1.00, y: 0.00, z: 0.00, w: 0.0),
+                "inputGVector": CIVector(x: 0.00, y: 1.00, z: 0.00, w: 0.0),
+                "inputBVector": CIVector(x: 0.00, y: 0.01, z: 0.97, w: 0.0)
+            ])
+        case .vhs:
+            return image.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 0.97, y: 0.01, z: 0.00, w: 0.0),
+                "inputGVector": CIVector(x: 0.01, y: 0.97, z: 0.01, w: 0.0),
+                "inputBVector": CIVector(x: 0.01, y: 0.03, z: 0.88, w: 0.0)
+            ])
+        }
+    }
 
+    // MARK: - Sensor / processor emulation
+
+    private static func emulateSensorPipeline(_ image: UIImage, profile: RetroCameraProfile) -> UIImage {
         var output = image
-            .applyingFilter("CIColorControls", parameters: [
-                kCIInputSaturationKey: saturation,
-                kCIInputContrastKey: 0.95,
-                kCIInputBrightnessKey: 0.01
-            ])
-            .applyingFilter("CIGaussianBlur", parameters: [
-                kCIInputRadiusKey: blurRadius
-            ])
 
-        output = cropToExtent(output, extent: image.extent)
+        let sampled = resize(output, to: profile.sensorSampleSize, quality: .low)
+        output = resizeWithNearestNeighbor(sampled, to: profile.displayUpscaleSize)
 
-        output = output.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: 0.96, y: 0.01, z: 0.00, w: 0.0),
-            "inputGVector": CIVector(x: 0.01, y: 0.97, z: 0.01, w: 0.0),
-            "inputBVector": CIVector(x: 0.01, y: 0.02, z: 0.90, w: 0.0)
-        ])
+        output = softenEdges(on: output, amount: profile.softness * 0.65)
+        output = addChromaticFringe(on: output, amount: profile.fringeOpacity)
+        output = addBandNoise(on: output, opacity: profile.bandingOpacity)
+
+        if profile.scanlineOpacity > 0.001 {
+            output = overlayScanlines(on: output, opacity: profile.scanlineOpacity, lineSpacing: 3)
+        }
+
+        output = overlayNoise(on: output, opacity: profile.noiseOpacity, monochrome: false)
+
+        if profile.vignette > 0.001 {
+            output = addVignette(on: output, amount: profile.vignette)
+        }
 
         return output
     }
 
-    private static func pointAndShootLook(_ image: CIImage, forPreview: Bool) -> CIImage {
-        image
-            .applyingFilter("CIColorControls", parameters: [
-                kCIInputSaturationKey: forPreview ? 1.00 : 0.95,
-                kCIInputContrastKey: 1.03,
-                kCIInputBrightnessKey: 0.01
-            ])
-            .applyingFilter("CIUnsharpMask", parameters: [
-                kCIInputRadiusKey: forPreview ? 1.0 : 1.4,
-                kCIInputIntensityKey: forPreview ? 0.35 : 0.50
-            ])
+    private static func applyJPEGProfile(_ image: UIImage, quality: RetroImageQuality) -> UIImage {
+        var output = image
+        for _ in 0..<quality.recompressionPasses {
+            output = recompressJPEG(output, quality: quality.jpegCompression)
+        }
+        return output
     }
 
-    private static func nokia6230iLook(_ image: CIImage, forPreview: Bool) -> CIImage {
-        image
-            .applyingFilter("CIColorControls", parameters: [
-                kCIInputSaturationKey: forPreview ? 1.02 : 1.06,
-                kCIInputContrastKey: forPreview ? 1.10 : 1.15,
-                kCIInputBrightnessKey: -0.01
-            ])
-            .applyingFilter("CIUnsharpMask", parameters: [
-                kCIInputRadiusKey: forPreview ? 1.2 : 1.8,
-                kCIInputIntensityKey: forPreview ? 0.55 : 0.85
-            ])
-    }
-
-    private static func n73Look(_ image: CIImage, forPreview: Bool) -> CIImage {
-        image
-            .applyingFilter("CIColorControls", parameters: [
-                kCIInputSaturationKey: forPreview ? 1.02 : 1.08,
-                kCIInputContrastKey: forPreview ? 1.03 : 1.06,
-                kCIInputBrightnessKey: 0.01
-            ])
-            .applyingFilter("CIHighlightShadowAdjust", parameters: [
-                "inputHighlightAmount": 0.82,
-                "inputShadowAmount": 0.30
-            ])
-            .applyingFilter("CISharpenLuminance", parameters: [
-                kCIInputSharpnessKey: forPreview ? 0.18 : 0.26
-            ])
-    }
-
-    // MARK: - Preset post-processing
-
-    private static func emulateOldPhone(_ image: UIImage) -> UIImage {
-        let down = resize(image, to: CGSize(width: 320, height: 240), quality: .low)
-        var up = resizeWithNearestNeighbor(down, to: CGSize(width: 640, height: 480))
-        up = recompressJPEG(up, quality: 0.38)
-        up = overlayNoise(on: up, opacity: 0.06, monochrome: false)
-        up = addVignette(on: up, amount: 0.18)
-        return up
-    }
-
-    private static func emulateVHS(_ image: UIImage) -> UIImage {
-        var out = resize(image, to: CGSize(width: 640, height: 480), quality: .low)
-        out = recompressJPEG(out, quality: 0.42)
-        out = overlayScanlines(on: out, opacity: 0.18, lineSpacing: 4)
-        out = overlayNoise(on: out, opacity: 0.07, monochrome: true)
-        out = addVignette(on: out, amount: 0.14)
-        return out
-    }
-
-    private static func emulatePointAndShoot(_ image: UIImage) -> UIImage {
-        var out = recompressJPEG(image, quality: 0.72)
-        out = overlayNoise(on: out, opacity: 0.025, monochrome: false)
-        out = addVignette(on: out, amount: 0.08)
-        return out
-    }
-
-    private static func emulate6230i(_ image: UIImage) -> UIImage {
-        var out = recompressJPEG(image, quality: 0.60)
-        out = overlayNoise(on: out, opacity: 0.035, monochrome: false)
-        out = addVignette(on: out, amount: 0.10)
-        return out
-    }
-
-    private static func emulateN73(_ image: UIImage) -> UIImage {
-        var out = recompressJPEG(image, quality: 0.82)
-        out = overlayNoise(on: out, opacity: 0.015, monochrome: false)
-        out = addVignette(on: out, amount: 0.05)
-        return out
+    private static func applyJPEGPreviewPass(_ image: UIImage, quality: RetroImageQuality) -> UIImage {
+        recompressJPEG(image, quality: quality.previewCompression)
     }
 
     // MARK: - Date stamp
 
-    private static func addOldDateStamp(to image: UIImage, preset: RetroPreset) -> UIImage {
+    private static func addOldDateStamp(to image: UIImage, color: UIColor) -> UIImage {
         let format = DateFormatter()
-        format.dateFormat = "dd.MM.yyyy HH:mm"
+        format.dateFormat = "dd.MM.yyyy"
         let text = format.string(from: Date())
 
         let renderer = UIGraphicsImageRenderer(size: image.size)
-        return renderer.image { context in
+        return renderer.image { _ in
             image.draw(in: CGRect(origin: .zero, size: image.size))
 
-            let baseSize = max(12, min(image.size.width, image.size.height) * 0.035)
-            let font = UIFont.monospacedDigitSystemFont(
-                ofSize: baseSize,
-                weight: .bold
-            )
-
-            let foreground: UIColor
-            switch preset {
-            case .oldPhone:
-                foreground = UIColor(red: 1.00, green: 0.74, blue: 0.18, alpha: 1.0)
-            case .vhs:
-                foreground = UIColor(red: 1.00, green: 0.92, blue: 0.65, alpha: 1.0)
-            case .pointAndShoot:
-                foreground = UIColor(red: 1.00, green: 0.70, blue: 0.20, alpha: 1.0)
-            case .nokia6230i:
-                foreground = UIColor(red: 1.00, green: 0.76, blue: 0.22, alpha: 1.0)
-            case .n73:
-                foreground = UIColor(red: 1.00, green: 0.78, blue: 0.28, alpha: 1.0)
-            }
+            let baseSize = max(12, min(image.size.width, image.size.height) * 0.036)
+            let font = UIFont.monospacedDigitSystemFont(ofSize: baseSize, weight: .bold)
 
             let shadow = NSShadow()
-            shadow.shadowColor = UIColor.black.withAlphaComponent(0.8)
+            shadow.shadowColor = UIColor.black.withAlphaComponent(0.86)
             shadow.shadowOffset = CGSize(width: 1, height: 1)
             shadow.shadowBlurRadius = 0
 
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: font,
-                .foregroundColor: foreground,
+                .foregroundColor: color,
                 .shadow: shadow
             ]
 
             let attributed = NSAttributedString(string: text, attributes: attributes)
             let textSize = attributed.size()
-
             let inset = max(10, baseSize * 0.55)
+
             let rect = CGRect(
-                x: image.size.width - textSize.width - inset,
-                y: image.size.height - textSize.height - inset,
+                x: inset,
+                y: inset,
                 width: textSize.width,
                 height: textSize.height
             )
@@ -553,17 +727,17 @@ enum RetroFilter {
             image.draw(in: CGRect(origin: .zero, size: size))
 
             let cg = context.cgContext
-            let count = Int((size.width * size.height) / 180.0)
+            let count = max(Int((size.width * size.height) / 210.0), 700)
 
             for _ in 0..<count {
                 let x = CGFloat.random(in: 0..<size.width)
                 let y = CGFloat.random(in: 0..<size.height)
-                let alpha = CGFloat.random(in: 0.02...opacity)
+                let alpha = CGFloat.random(in: 0.01...max(opacity, 0.011))
 
                 let color: UIColor
                 if monochrome {
-                    let v = CGFloat.random(in: 0.75...1.0)
-                    color = UIColor(white: v, alpha: alpha)
+                    let value = CGFloat.random(in: 0.75...1.0)
+                    color = UIColor(white: value, alpha: alpha)
                 } else {
                     color = UIColor(
                         red: CGFloat.random(in: 0.75...1.0),
@@ -602,10 +776,73 @@ enum RetroFilter {
         }
     }
 
+    private static func addBandNoise(on image: UIImage, opacity: CGFloat) -> UIImage {
+        guard opacity > 0.001 else { return image }
+
+        let size = image.size
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let bandCount = max(Int(size.height / 24), 8)
+
+        return renderer.image { context in
+            image.draw(in: CGRect(origin: .zero, size: size))
+            let cg = context.cgContext
+
+            for index in 0..<bandCount {
+                let bandHeight = CGFloat.random(in: 2...7)
+                let y = (CGFloat(index) / CGFloat(max(bandCount, 1))) * size.height + CGFloat.random(in: -3...3)
+                let alpha = CGFloat.random(in: 0.01...opacity)
+                let white = CGFloat.random(in: 0.82...1.0)
+
+                cg.setFillColor(UIColor(white: white, alpha: alpha).cgColor)
+                cg.fill(CGRect(x: 0, y: y, width: size.width, height: bandHeight))
+            }
+        }
+    }
+
+    private static func addChromaticFringe(on image: UIImage, amount: CGFloat) -> UIImage {
+        guard amount > 0.001 else { return image }
+
+        let size = image.size
+        let offset = max(1, Int(ceil(max(size.width, size.height) * amount * 0.006)))
+        let renderer = UIGraphicsImageRenderer(size: size)
+
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+
+            UIColor.systemPink.withAlphaComponent(amount * 0.45).setFill()
+            UIRectFillUsingBlendMode(
+                CGRect(x: 0, y: 0, width: size.width, height: size.height),
+                .color
+            )
+
+            image.draw(
+                in: CGRect(x: CGFloat(offset), y: 0, width: size.width, height: size.height),
+                blendMode: .screen,
+                alpha: amount * 0.30
+            )
+            image.draw(
+                in: CGRect(x: -CGFloat(offset), y: 0, width: size.width, height: size.height),
+                blendMode: .plusLighter,
+                alpha: amount * 0.18
+            )
+        }
+    }
+
+    private static func softenEdges(on image: UIImage, amount: CGFloat) -> UIImage {
+        guard amount > 0.001, let input = CIImage(image: image) else { return image }
+
+        let blurred = input
+            .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: amount])
+            .cropped(to: input.extent)
+
+        guard let cg = context.createCGImage(blurred, from: blurred.extent) else { return image }
+        return UIImage(cgImage: cg)
+    }
+
     private static func addVignette(on image: UIImage, amount: CGFloat) -> UIImage {
         guard let input = CIImage(image: image) else { return image }
 
-        let radius = min(input.extent.width, input.extent.height) * 0.9
+        let radius = min(input.extent.width, input.extent.height) * 0.90
         let center = CIVector(x: input.extent.midX, y: input.extent.midY)
 
         let output = input.applyingFilter("CIVignetteEffect", parameters: [
