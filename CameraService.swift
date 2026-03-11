@@ -6,7 +6,7 @@ import CoreImage
 import CoreMedia
 import QuartzCore
 
-final class CameraService: NSObject, ObservableObject {
+final class CameraService: NSObject, ObservableObject, AVCaptureFileOutputRecordingDelegate {
     @Published var isRecording: Bool = false
     @Published var useRetroFilter: Bool = true
     @Published var addDateStamp: Bool = false
