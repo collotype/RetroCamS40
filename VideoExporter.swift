@@ -1,14 +1,18 @@
 import Foundation
 import AVFoundation
 import CoreImage
+import CoreMedia
 import UIKit
 
 enum VideoExporterError: Error {
     case exportSessionUnavailable
+    case noVideoTrack
     case exportFailed
 }
 
 enum VideoExporter {
+    private static let ciContext = CIContext(options: nil)
+
     static func exportRetroVideo(
         inputURL: URL,
         preset: RetroPreset,
@@ -16,9 +20,14 @@ enum VideoExporter {
     ) {
         let asset = AVAsset(url: inputURL)
 
+        guard asset.tracks(withMediaType: .video).first != nil else {
+            completion(.failure(VideoExporterError.noVideoTrack))
+            return
+        }
+
         guard let exportSession = AVAssetExportSession(
             asset: asset,
-            presetName: exportPresetName(for: preset)
+            presetName: AVAssetExportPresetHighestQuality
         ) else {
             completion(.failure(VideoExporterError.exportSessionUnavailable))
             return
@@ -33,16 +42,15 @@ enum VideoExporter {
             asset: asset,
             applyingCIFiltersWithHandler: { request in
                 let source = request.sourceImage.clampedToExtent()
-                let filtered = applyVideoLook(
-                    to: source,
-                    preset: preset
-                ).cropped(to: request.sourceImage.extent)
-
-                request.finish(with: filtered, context: nil)
+                let filtered = applyVideoLook(to: source, preset: preset)
+                    .cropped(to: request.sourceImage.extent)
+                request.finish(with: filtered, context: ciContext)
             }
         )
 
-        composition.frameDuration = frameDuration(for: asset)
+        composition.frameDuration = frameDuration(for: asset, preset: preset)
+        composition.renderSize = renderSize(for: asset, preset: preset)
+
         exportSession.videoComposition = composition
         exportSession.outputURL = outputURL
         exportSession.outputFileType = .mov
@@ -52,179 +60,130 @@ enum VideoExporter {
             switch exportSession.status {
             case .completed:
                 completion(.success(outputURL))
-
             case .failed:
                 completion(.failure(exportSession.error ?? VideoExporterError.exportFailed))
-
             case .cancelled:
                 completion(.failure(exportSession.error ?? VideoExporterError.exportFailed))
-
             default:
                 completion(.failure(exportSession.error ?? VideoExporterError.exportFailed))
             }
         }
     }
 
-    private static func exportPresetName(for preset: RetroPreset) -> String {
+    // MARK: - Export geometry
+
+    private static func renderSize(for asset: AVAsset, preset: RetroPreset) -> CGSize {
+        guard let track = asset.tracks(withMediaType: .video).first else {
+            return CGSize(width: 640, height: 480)
+        }
+
+        let targetLandscape = targetLandscapeRenderSize(for: preset)
+        let oriented = orientedNaturalSize(for: track)
+        let isPortrait = oriented.height > oriented.width
+
+        if isPortrait {
+            return CGSize(width: targetLandscape.height, height: targetLandscape.width)
+        } else {
+            return targetLandscape
+        }
+    }
+
+    private static func targetLandscapeRenderSize(for preset: RetroPreset) -> CGSize {
         switch preset {
         case .oldPhone, .vhs:
-            return AVAssetExportPreset640x480
+            return CGSize(width: 640, height: 480)
         case .pointAndShoot, .nokia6230i:
-            return AVAssetExportPreset960x540
+            return CGSize(width: 640, height: 480)
         case .n73:
-            return AVAssetExportPreset1280x720
+            return CGSize(width: 720, height: 540)
         }
     }
 
-    private static func frameDuration(for asset: AVAsset) -> CMTime {
+    private static func orientedNaturalSize(for track: AVAssetTrack) -> CGSize {
+        let transformed = CGRect(origin: .zero, size: track.naturalSize)
+            .applying(track.preferredTransform)
+            .standardized
+            .integral
+
+        return CGSize(width: abs(transformed.width), height: abs(transformed.height))
+    }
+
+    private static func frameDuration(for asset: AVAsset, preset: RetroPreset) -> CMTime {
+        let targetFPS = targetFPS(for: preset)
+
         guard let track = asset.tracks(withMediaType: .video).first else {
-            return CMTime(value: 1, timescale: 30)
+            return CMTime(value: 1, timescale: targetFPS)
         }
 
-        let fps = track.nominalFrameRate
-        if fps > 0 {
-            return CMTime(value: 1, timescale: CMTimeScale(max(24, min(Int32(fps.rounded()), 60))))
-        } else {
-            return CMTime(value: 1, timescale: 30)
+        let sourceFPS = track.nominalFrameRate
+        if sourceFPS > 0 {
+            let source = Int32(max(1, min(Int(sourceFPS.rounded()), 60)))
+            let finalFPS = min(source, targetFPS)
+            return CMTime(value: 1, timescale: finalFPS)
         }
+
+        return CMTime(value: 1, timescale: targetFPS)
     }
 
-    private static func applyVideoLook(to image: CIImage, preset: RetroPreset) -> CIImage {
+    private static func targetFPS(for preset: RetroPreset) -> CMTimeScale {
         switch preset {
         case .oldPhone:
-            return oldPhoneVideoLook(image)
+            return 15
         case .vhs:
-            return vhsVideoLook(image)
+            return 25
         case .pointAndShoot:
-            return pointAndShootVideoLook(image)
+            return 24
         case .nokia6230i:
-            return nokia6230iVideoLook(image)
+            return 20
         case .n73:
-            return n73VideoLook(image)
+            return 24
         }
     }
 
-    private static func oldPhoneVideoLook(_ image: CIImage) -> CIImage {
-        let downscaled = pixelateAndResize(
-            image,
-            scaleDown: 0.42,
-            pixelScale: 2.3
-        )
+    // MARK: - Filter pipeline
 
-        var output = downscaled
-            .applyingFilter("CIColorControls", parameters: [
-                kCIInputSaturationKey: 0.72,
-                kCIInputContrastKey: 1.20,
-                kCIInputBrightnessKey: -0.03
-            ])
-            .applyingFilter("CIHighlightShadowAdjust", parameters: [
-                "inputHighlightAmount": 0.75,
-                "inputShadowAmount": 0.18
-            ])
-            .applyingFilter("CISharpenLuminance", parameters: [
-                kCIInputSharpnessKey: 0.20
-            ])
-            .applyingFilter("CIColorMatrix", parameters: [
-                "inputRVector": CIVector(x: 1.02, y: 0.00, z: 0.00, w: 0.0),
-                "inputGVector": CIVector(x: 0.00, y: 1.00, z: 0.00, w: 0.0),
-                "inputBVector": CIVector(x: 0.00, y: 0.02, z: 0.92, w: 0.0)
-            ])
+    private static func applyVideoLook(to image: CIImage, preset: RetroPreset) -> CIImage {
+        let profile = RetroFilter.profile(for: preset)
 
-        output = addNoise(to: output, amount: 0.020, monochrome: false)
-        output = addVignette(to: output, intensity: 0.20)
+        var output = applySensorScale(to: image, profile: profile)
+        output = applyTone(to: output, profile: profile)
+        output = applyColorSignature(to: output, preset: preset)
+        output = applyProcessorAccent(to: output, profile: profile)
+
+        if profile.bandingOpacity > 0.001 {
+            output = addBandNoise(to: output, amount: profile.bandingOpacity)
+        }
+
+        if profile.scanlineOpacity > 0.001 {
+            output = addScanlines(to: output, opacity: profile.scanlineOpacity)
+        }
+
+        if profile.fringeOpacity > 0.001 {
+            output = addChromaticOffset(to: output, amount: profile.fringeOpacity)
+        }
+
+        if profile.noiseOpacity > 0.001 {
+            output = addNoise(to: output, amount: profile.noiseOpacity, monochrome: false)
+        }
+
+        if profile.vignette > 0.001 {
+            output = addVignette(to: output, intensity: profile.vignette)
+        }
+
+        output = applyCompressionPass(to: output, quality: profile.imageQuality)
         return output
     }
 
-    private static func vhsVideoLook(_ image: CIImage) -> CIImage {
-        var output = image
-            .applyingFilter("CIColorControls", parameters: [
-                kCIInputSaturationKey: 0.70,
-                kCIInputContrastKey: 0.94,
-                kCIInputBrightnessKey: 0.01
-            ])
-            .applyingFilter("CIGaussianBlur", parameters: [
-                kCIInputRadiusKey: 1.0
-            ])
-            .cropped(to: image.extent)
-
-        output = output.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: 0.96, y: 0.01, z: 0.00, w: 0.0),
-            "inputGVector": CIVector(x: 0.01, y: 0.97, z: 0.01, w: 0.0),
-            "inputBVector": CIVector(x: 0.01, y: 0.02, z: 0.88, w: 0.0)
-        ])
-
-        output = addScanlines(to: output, spacing: 4, opacity: 0.14)
-        output = addNoise(to: output, amount: 0.018, monochrome: true)
-        output = addVignette(to: output, intensity: 0.15)
-        output = horizontalSmear(output, offset: 1.4)
-        return output
-    }
-
-    private static func pointAndShootVideoLook(_ image: CIImage) -> CIImage {
-        var output = image
-            .applyingFilter("CIColorControls", parameters: [
-                kCIInputSaturationKey: 0.96,
-                kCIInputContrastKey: 1.03,
-                kCIInputBrightnessKey: 0.01
-            ])
-            .applyingFilter("CIUnsharpMask", parameters: [
-                kCIInputRadiusKey: 1.3,
-                kCIInputIntensityKey: 0.45
-            ])
-
-        output = addNoise(to: output, amount: 0.010, monochrome: false)
-        output = addVignette(to: output, intensity: 0.07)
-        return output
-    }
-
-    private static func nokia6230iVideoLook(_ image: CIImage) -> CIImage {
-        var output = image
-            .applyingFilter("CIColorControls", parameters: [
-                kCIInputSaturationKey: 1.03,
-                kCIInputContrastKey: 1.14,
-                kCIInputBrightnessKey: -0.01
-            ])
-            .applyingFilter("CIUnsharpMask", parameters: [
-                kCIInputRadiusKey: 1.7,
-                kCIInputIntensityKey: 0.85
-            ])
-
-        output = addNoise(to: output, amount: 0.012, monochrome: false)
-        output = addVignette(to: output, intensity: 0.10)
-        return output
-    }
-
-    private static func n73VideoLook(_ image: CIImage) -> CIImage {
-        var output = image
-            .applyingFilter("CIColorControls", parameters: [
-                kCIInputSaturationKey: 1.06,
-                kCIInputContrastKey: 1.06,
-                kCIInputBrightnessKey: 0.01
-            ])
-            .applyingFilter("CIHighlightShadowAdjust", parameters: [
-                "inputHighlightAmount": 0.82,
-                "inputShadowAmount": 0.28
-            ])
-            .applyingFilter("CISharpenLuminance", parameters: [
-                kCIInputSharpnessKey: 0.24
-            ])
-
-        output = addNoise(to: output, amount: 0.006, monochrome: false)
-        output = addVignette(to: output, intensity: 0.05)
-        return output
-    }
-
-    private static func pixelateAndResize(
-        _ image: CIImage,
-        scaleDown: CGFloat,
-        pixelScale: CGFloat
-    ) -> CIImage {
+    private static func applySensorScale(to image: CIImage, profile: RetroCameraProfile) -> CIImage {
         let extent = image.extent.integral
         guard extent.width > 0, extent.height > 0 else { return image }
 
-        let small = image.transformed(by: CGAffineTransform(scaleX: scaleDown, y: scaleDown))
+        let targetWidth = max(profile.sensorSampleSize.width, 1)
+        let scaleDown = min(max(targetWidth / max(extent.width, 1), 0.18), 1.0)
+        let pixelScale = pixelScale(for: profile)
 
-        let pixelated = small.applyingFilter("CIPixellate", parameters: [
+        let reduced = image.transformed(by: CGAffineTransform(scaleX: scaleDown, y: scaleDown))
+        let pixelated = reduced.applyingFilter("CIPixellate", parameters: [
             kCIInputScaleKey: pixelScale
         ])
 
@@ -234,11 +193,133 @@ enum VideoExporter {
             .cropped(to: extent)
     }
 
-    private static func addNoise(
-        to image: CIImage,
-        amount: CGFloat,
-        monochrome: Bool
-    ) -> CIImage {
+    private static func pixelScale(for profile: RetroCameraProfile) -> CGFloat {
+        switch profile.processorMode {
+        case .realistic:
+            return 2.5
+        case .balanced:
+            return 1.8
+        case .enhanced:
+            return 1.25
+        }
+    }
+
+    private static func applyTone(to image: CIImage, profile: RetroCameraProfile) -> CIImage {
+        var output = image
+            .applyingFilter("CIColorControls", parameters: [
+                kCIInputSaturationKey: profile.saturation,
+                kCIInputContrastKey: profile.contrast,
+                kCIInputBrightnessKey: profile.brightness
+            ])
+            .applyingFilter("CIHighlightShadowAdjust", parameters: [
+                "inputHighlightAmount": profile.highlightRollOff,
+                "inputShadowAmount": profile.shadowLift
+            ])
+
+        let softnessRadius = max(profile.softness * 0.9, 0)
+        if softnessRadius > 0.001 {
+            output = output
+                .applyingFilter("CIGaussianBlur", parameters: [
+                    kCIInputRadiusKey: softnessRadius
+                ])
+                .cropped(to: image.extent)
+        }
+
+        let sharpness = max(profile.sharpen * 0.85, 0)
+        if sharpness > 0.001 {
+            output = output.applyingFilter("CISharpenLuminance", parameters: [
+                kCIInputSharpnessKey: sharpness
+            ])
+        }
+
+        return output
+    }
+
+    private static func applyColorSignature(to image: CIImage, preset: RetroPreset) -> CIImage {
+        switch preset {
+        case .oldPhone:
+            return image.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 1.01, y: 0.00, z: 0.00, w: 0.0),
+                "inputGVector": CIVector(x: 0.01, y: 0.98, z: 0.00, w: 0.0),
+                "inputBVector": CIVector(x: 0.00, y: 0.03, z: 0.91, w: 0.0)
+            ])
+        case .nokia6230i:
+            return image.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 1.02, y: 0.01, z: 0.00, w: 0.0),
+                "inputGVector": CIVector(x: 0.00, y: 1.00, z: 0.00, w: 0.0),
+                "inputBVector": CIVector(x: 0.00, y: 0.01, z: 0.95, w: 0.0)
+            ])
+        case .n73:
+            return image.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 1.01, y: 0.00, z: 0.00, w: 0.0),
+                "inputGVector": CIVector(x: 0.00, y: 1.01, z: 0.00, w: 0.0),
+                "inputBVector": CIVector(x: 0.00, y: 0.01, z: 0.98, w: 0.0)
+            ])
+        case .pointAndShoot:
+            return image.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 1.00, y: 0.00, z: 0.00, w: 0.0),
+                "inputGVector": CIVector(x: 0.00, y: 1.00, z: 0.00, w: 0.0),
+                "inputBVector": CIVector(x: 0.00, y: 0.01, z: 0.97, w: 0.0)
+            ])
+        case .vhs:
+            return image.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 0.97, y: 0.01, z: 0.00, w: 0.0),
+                "inputGVector": CIVector(x: 0.01, y: 0.97, z: 0.01, w: 0.0),
+                "inputBVector": CIVector(x: 0.01, y: 0.03, z: 0.88, w: 0.0)
+            ])
+        }
+    }
+
+    private static func applyProcessorAccent(to image: CIImage, profile: RetroCameraProfile) -> CIImage {
+        switch profile.processorMode {
+        case .realistic:
+            return image
+                .applyingFilter("CIUnsharpMask", parameters: [
+                    kCIInputRadiusKey: 0.6,
+                    kCIInputIntensityKey: 0.22
+                ])
+                .cropped(to: image.extent)
+        case .balanced:
+            return image
+                .applyingFilter("CIUnsharpMask", parameters: [
+                    kCIInputRadiusKey: 0.8,
+                    kCIInputIntensityKey: 0.34
+                ])
+                .cropped(to: image.extent)
+        case .enhanced:
+            return image
+                .applyingFilter("CIUnsharpMask", parameters: [
+                    kCIInputRadiusKey: 1.0,
+                    kCIInputIntensityKey: 0.46
+                ])
+                .cropped(to: image.extent)
+        }
+    }
+
+    private static func applyCompressionPass(to image: CIImage, quality: RetroImageQuality) -> CIImage {
+        switch quality {
+        case .economy:
+            return image
+                .applyingFilter("CIUnsharpMask", parameters: [
+                    kCIInputRadiusKey: 0.4,
+                    kCIInputIntensityKey: 0.10
+                ])
+                .cropped(to: image.extent)
+        case .standard:
+            return image
+        case .fine:
+            return image
+                .applyingFilter("CIColorControls", parameters: [
+                    kCIInputSaturationKey: 1.01,
+                    kCIInputContrastKey: 1.01,
+                    kCIInputBrightnessKey: 0.0
+                ])
+        }
+    }
+
+    // MARK: - CI overlays
+
+    private static func addNoise(to image: CIImage, amount: CGFloat, monochrome: Bool) -> CIImage {
         let noise = CIFilter(name: "CIRandomGenerator")!.outputImage!
             .cropped(to: image.extent)
 
@@ -256,7 +337,7 @@ enum VideoExporter {
             processedNoise = noise
                 .applyingFilter("CIColorControls", parameters: [
                     kCIInputSaturationKey: 0.35,
-                    kCIInputContrastKey: 1.10
+                    kCIInputContrastKey: 1.08
                 ])
                 .applyingFilter("CIColorMatrix", parameters: [
                     "inputAVector": CIVector(x: 0, y: 0, z: 0, w: amount)
@@ -268,74 +349,75 @@ enum VideoExporter {
         ])
     }
 
-    private static func addScanlines(
-        to image: CIImage,
-        spacing: Int,
-        opacity: CGFloat
-    ) -> CIImage {
+    private static func addScanlines(to image: CIImage, opacity: CGFloat) -> CIImage {
         let extent = image.extent.integral
         guard extent.width > 0, extent.height > 0 else { return image }
 
-        let lineHeight = max(1, spacing / 2)
-        let stripeBase = CIImage(color: CIColor.black)
-            .cropped(to: CGRect(x: 0, y: 0, width: extent.width, height: CGFloat(lineHeight)))
-
-        var stripes: CIImage?
-        var y: CGFloat = 0
-
-        while y < extent.height {
-            let line = stripeBase.transformed(by: CGAffineTransform(translationX: 0, y: y))
-            if let existing = stripes {
-                stripes = line.applyingFilter("CISourceOverCompositing", parameters: [
-                    kCIInputBackgroundImageKey: existing
-                ])
-            } else {
-                stripes = line
-            }
-            y += CGFloat(max(spacing, 2))
-        }
-
-        guard let stripes else { return image }
-
-        let alphaStripes = stripes
+        let stripes = CIFilter(name: "CIStripesGenerator", parameters: [
+            "inputColor0": CIColor(red: 0, green: 0, blue: 0, alpha: opacity),
+            "inputColor1": CIColor(red: 0, green: 0, blue: 0, alpha: 0.0),
+            "inputWidth": 2.0,
+            "inputSharpness": 1.0,
+            "inputCenter": CIVector(x: extent.midX, y: extent.midY)
+        ])!.outputImage!
             .cropped(to: extent)
-            .applyingFilter("CIColorMatrix", parameters: [
-                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: opacity)
-            ])
+            .transformed(by: CGAffineTransform(rotationAngle: .pi / 2))
+            .cropped(to: extent)
 
-        return alphaStripes.applyingFilter("CISourceOverCompositing", parameters: [
+        return stripes.applyingFilter("CISourceOverCompositing", parameters: [
             kCIInputBackgroundImageKey: image
         ])
     }
 
-    private static func addVignette(
-        to image: CIImage,
-        intensity: CGFloat
-    ) -> CIImage {
-        image.applyingFilter("CIVignette", parameters: [
-            kCIInputIntensityKey: intensity,
-            kCIInputRadiusKey: 1.2
+    private static func addBandNoise(to image: CIImage, amount: CGFloat) -> CIImage {
+        let extent = image.extent.integral
+        guard extent.width > 0, extent.height > 0 else { return image }
+
+        let bright = CIFilter(name: "CIStripesGenerator", parameters: [
+            "inputColor0": CIColor(red: 1, green: 1, blue: 1, alpha: amount * 0.55),
+            "inputColor1": CIColor(red: 1, green: 1, blue: 1, alpha: 0.0),
+            "inputWidth": 14.0,
+            "inputSharpness": 0.20,
+            "inputCenter": CIVector(x: extent.midX, y: extent.midY)
+        ])!.outputImage!
+            .cropped(to: extent)
+            .transformed(by: CGAffineTransform(rotationAngle: .pi / 2))
+            .cropped(to: extent)
+
+        let dark = CIFilter(name: "CIStripesGenerator", parameters: [
+            "inputColor0": CIColor(red: 0, green: 0, blue: 0, alpha: amount * 0.25),
+            "inputColor1": CIColor(red: 0, green: 0, blue: 0, alpha: 0.0),
+            "inputWidth": 21.0,
+            "inputSharpness": 0.14,
+            "inputCenter": CIVector(x: extent.midX + 9, y: extent.midY)
+        ])!.outputImage!
+            .cropped(to: extent)
+            .transformed(by: CGAffineTransform(rotationAngle: .pi / 2))
+            .cropped(to: extent)
+
+        let combined = bright.applyingFilter("CIAdditionCompositing", parameters: [
+            kCIInputBackgroundImageKey: dark
+        ])
+
+        return combined.applyingFilter("CISourceOverCompositing", parameters: [
+            kCIInputBackgroundImageKey: image
         ])
     }
 
-    private static func horizontalSmear(_ image: CIImage, offset: CGFloat) -> CIImage {
-        let shiftedR = image
-            .applyingFilter("CIAffineTransform", parameters: [
-                kCIInputTransformKey: CGAffineTransform(translationX: offset, y: 0)
-            ])
-            .cropped(to: image.extent)
+    private static func addChromaticOffset(to image: CIImage, amount: CGFloat) -> CIImage {
+        let extent = image.extent.integral
+        guard extent.width > 0, extent.height > 0 else { return image }
 
-        let shiftedB = image
-            .applyingFilter("CIAffineTransform", parameters: [
-                kCIInputTransformKey: CGAffineTransform(translationX: -offset, y: 0)
-            ])
-            .cropped(to: image.extent)
+        let shift = max(extent.width, extent.height) * amount * 0.006
 
-        let red = shiftedR.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: 1, y: 0, z: 0, w: 0),
-            "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0)
-        ])
+        let red = image
+            .transformed(by: CGAffineTransform(translationX: shift, y: 0))
+            .cropped(to: extent)
+            .applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 1, y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0)
+            ])
 
         let green = image.applyingFilter("CIColorMatrix", parameters: [
             "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
@@ -343,11 +425,14 @@ enum VideoExporter {
             "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0)
         ])
 
-        let blue = shiftedB.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
-            "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0, z: 1, w: 0)
-        ])
+        let blue = image
+            .transformed(by: CGAffineTransform(translationX: -shift, y: 0))
+            .cropped(to: extent)
+            .applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: 1, w: 0)
+            ])
 
         let rg = red.applyingFilter("CIAdditionCompositing", parameters: [
             kCIInputBackgroundImageKey: green
@@ -355,6 +440,13 @@ enum VideoExporter {
 
         return blue.applyingFilter("CIAdditionCompositing", parameters: [
             kCIInputBackgroundImageKey: rg
+        ])
+    }
+
+    private static func addVignette(to image: CIImage, intensity: CGFloat) -> CIImage {
+        image.applyingFilter("CIVignette", parameters: [
+            kCIInputIntensityKey: intensity,
+            kCIInputRadiusKey: 1.2
         ])
     }
 }
