@@ -122,6 +122,201 @@ struct ContentView: View {
     }
 }
 
+private extension ContentView {
+    func cameraScreen(in size: CGSize) -> some View {
+        let shellWidth = min(size.width - 24, 420)
+        let viewportHeight = min(max(size.height * 0.34, 250), 330)
+
+        return VStack(spacing: 10) {
+            Spacer(minLength: 6)
+
+            TopStatusBar(
+                theme: selectedTheme,
+                date: now,
+                recordingDuration: camera.recordingDuration,
+                isRecording: camera.isRecording,
+                smiley: effectiveSmiley
+            )
+            .frame(maxWidth: shellWidth)
+            .padding(.horizontal, 12)
+
+            DeviceShell(theme: selectedTheme) {
+                VStack(spacing: 10) {
+                    cameraViewport(height: viewportHeight)
+
+                    selectorStrip
+                        .padding(.horizontal, 10)
+
+                    BottomSoftKeyBar(
+                        theme: selectedTheme,
+                        leftAction: {
+                            library.requestAndLoad()
+                            route = .gallery
+                        },
+                        centerAction: {
+                            camera.performPrimaryAction()
+                        },
+                        rightAction: {
+                            route = .settingsHub
+                        },
+                        centerResourceName: centerButtonResourceName,
+                        leftLabel: "GALLERY",
+                        rightLabel: "SET"
+                    )
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 10)
+                }
+                .padding(.top, 10)
+            }
+            .frame(width: shellWidth)
+            .padding(.horizontal, 12)
+
+            Spacer(minLength: 6)
+        }
+    }
+
+    var selectorStrip: some View {
+        HStack(spacing: 8) {
+            CompactSelectorCapsule(
+                title: "MODE",
+                value: camera.captureMode == .photo ? "PHOTO" : "VIDEO",
+                theme: selectedTheme,
+                isActive: true,
+                action: {
+                    camera.toggleCaptureMode()
+                }
+            )
+
+            CompactSelectorCapsule(
+                title: "CAM",
+                value: camera.selectedPreset.shortTitle.uppercased(),
+                theme: selectedTheme,
+                isActive: false,
+                action: {
+                    cyclePreset()
+                }
+            )
+
+            CompactSelectorCapsule(
+                title: "SIZE",
+                value: shortImageSizeTitle(camera.selectedImageSize),
+                theme: selectedTheme,
+                isActive: false,
+                action: {
+                    cycleImageSize()
+                }
+            )
+        }
+    }
+
+    func cameraViewport(height: CGFloat) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.black.opacity(0.78))
+
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(selectedTheme.borderColor.opacity(0.95), lineWidth: 2)
+
+            ZStack {
+                CameraPreview(session: camera.session)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+                if let preview = camera.previewImage {
+                    Image(uiImage: preview)
+                        .resizable()
+                        .scaledToFill()
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+
+                if camera.captureMode == .video && camera.isRecording {
+                    VStack {
+                        HStack {
+                            recordingPill
+                            Spacer()
+                        }
+                        Spacer()
+                    }
+                    .padding(12)
+                }
+
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        if camera.addDateStamp {
+                            DateOverlayStamp()
+                                .padding(8)
+                        }
+                    }
+                }
+            }
+            .padding(9)
+        }
+        .frame(height: height)
+        .shadow(color: .black.opacity(0.28), radius: 10, x: 0, y: 6)
+    }
+
+    var recordingPill: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 10, height: 10)
+
+            Text("REC")
+                .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                .foregroundStyle(Color.white)
+
+            Text(formatDuration(camera.recordingDuration))
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .foregroundStyle(Color.white)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.72))
+        .clipShape(Capsule())
+    }
+
+    var centerButtonResourceName: String {
+        switch camera.captureMode {
+        case .photo:
+            return "play"
+        case .video:
+            return camera.isRecording ? "play3" : "play2"
+        }
+    }
+
+    func cyclePreset() {
+        let available = RetroPreset.mainSelectableCases
+        guard let currentIndex = available.firstIndex(of: camera.selectedPreset) else {
+            camera.updatePreset(available.first ?? .oldPhone)
+            return
+        }
+        let next = available[(currentIndex + 1) % available.count]
+        camera.updatePreset(next)
+    }
+
+    func cycleImageSize() {
+        let values = RetroImageSize.allCases
+        guard let index = values.firstIndex(of: camera.selectedImageSize) else {
+            camera.updateImageSize(.vga640x480)
+            return
+        }
+        let next = values[(index + 1) % values.count]
+        camera.updateImageSize(next)
+    }
+
+    func shortImageSizeTitle(_ size: RetroImageSize) -> String {
+        switch size {
+        case .vga640x480:
+            return "VGA"
+        case .sxga1280x960:
+            return "SXGA"
+        case .uxga1600x1200:
+            return "UXGA"
+        }
+    }
+}
+
 // MARK: - Main camera screen
 
 private extension ContentView {
