@@ -77,13 +77,10 @@ struct ContentView: View {
             settingsScreen
 
         case .gallery:
-            placeholderScreen(
-                title: "Галерея",
-                lines: [
-                    "Следующим шагом сюда можно встроить свою медиатеку приложения.",
-                    "Без внешних ссылок и без выходов наружу."
-                ]
-            )
+    LegacyGalleryScreen(
+        selectedAssetID: $gallerySelectedAssetID,
+        presentViewer: $galleryViewerPresented
+    )
 
         case .editor:
             placeholderScreen(
