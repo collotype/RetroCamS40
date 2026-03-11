@@ -125,57 +125,15 @@ struct ContentView: View {
 // MARK: - Main camera screen
 
 private extension ContentView {
+    private extension ContentView {
     func cameraScreen(in size: CGSize) -> some View {
-        VStack(spacing: 10) {
-            Spacer(minLength: 8)
-
-            TopStatusBar(
-                theme: selectedTheme,
-                date: now,
-                recordingDuration: camera.recordingDuration,
-                isRecording: camera.isRecording,
-                smiley: effectiveSmiley
-            )
-            .padding(.horizontal, 14)
-
-            ZStack {
-                DeviceShell(theme: selectedTheme) {
-                    VStack(spacing: 0) {
-                        cameraViewport(in: size)
-                            .padding(.horizontal, 10)
-                            .padding(.top, 10)
-
-                        selectorStrip
-                            .padding(.horizontal, 12)
-                            .padding(.top, 8)
-
-                        BottomSoftKeyBar(
-                            theme: selectedTheme,
-                            leftAction: {
-                                library.requestAndLoad()
-                                route = .gallery
-                            },
-                            centerAction: {
-                                camera.performPrimaryAction()
-                            },
-                            rightAction: {
-                                route = .settingsHub
-                            },
-                            centerResourceName: centerButtonResourceName,
-                            leftLabel: "GALLERY",
-                            rightLabel: "SET"
-                        )
-                        .padding(.horizontal, 10)
-                        .padding(.top, 10)
-                        .padding(.bottom, 12)
-                    }
-                }
-            }
-            .padding(.horizontal, 14)
-
-            Spacer(minLength: 8)
-        }
+        // старый код
     }
+
+    var selectorStrip: some View {
+        // дальше уже не трогаешь
+    }
+}
 
     var selectorStrip: some View {
         HStack(spacing: 8) {
