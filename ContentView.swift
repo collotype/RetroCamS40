@@ -1217,10 +1217,9 @@ private struct MediaViewerScreen: View {
     var viewerWindow: some View {
         ZStack {
             if ResourceImageLoader.image(named: "window") != nil {
-                ResourceImageView(name: "window")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: 360)
+    ResourceImageView(name: "window")
+        .scaledToFit()
+        .frame(maxWidth: 360)
             } else {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(theme.panelGradient)
