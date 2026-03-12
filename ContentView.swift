@@ -122,6 +122,8 @@ struct ContentView: View {
     }
 }
 
+// MARK: - Main camera screen
+
 private extension ContentView {
     func cameraScreen(in size: CGSize) -> some View {
         let shellWidth = min(size.width - 24, 420)
@@ -254,161 +256,6 @@ private extension ContentView {
         }
         .frame(height: height)
         .shadow(color: .black.opacity(0.28), radius: 10, x: 0, y: 6)
-    }
-
-    var recordingPill: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(Color.red)
-                .frame(width: 10, height: 10)
-
-            Text("REC")
-                .font(.system(size: 11, weight: .heavy, design: .monospaced))
-                .foregroundStyle(Color.white)
-
-            Text(formatDuration(camera.recordingDuration))
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(Color.white)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Color.black.opacity(0.72))
-        .clipShape(Capsule())
-    }
-
-    var centerButtonResourceName: String {
-        switch camera.captureMode {
-        case .photo:
-            return "play"
-        case .video:
-            return camera.isRecording ? "play3" : "play2"
-        }
-    }
-
-    func cyclePreset() {
-        let available = RetroPreset.mainSelectableCases
-        guard let currentIndex = available.firstIndex(of: camera.selectedPreset) else {
-            camera.updatePreset(available.first ?? .oldPhone)
-            return
-        }
-        let next = available[(currentIndex + 1) % available.count]
-        camera.updatePreset(next)
-    }
-
-    func cycleImageSize() {
-        let values = RetroImageSize.allCases
-        guard let index = values.firstIndex(of: camera.selectedImageSize) else {
-            camera.updateImageSize(.vga640x480)
-            return
-        }
-        let next = values[(index + 1) % values.count]
-        camera.updateImageSize(next)
-    }
-
-    func shortImageSizeTitle(_ size: RetroImageSize) -> String {
-        switch size {
-        case .vga640x480:
-            return "VGA"
-        case .sxga1280x960:
-            return "SXGA"
-        case .uxga1600x1200:
-            return "UXGA"
-        }
-    }
-}
-
-// MARK: - Main camera screen
-
-private extension ContentView {
-    private extension ContentView {
-    func cameraScreen(in size: CGSize) -> some View {
-        // старый код
-    }
-
-    var selectorStrip: some View {
-        // дальше уже не трогаешь
-    }
-}
-
-    var selectorStrip: some View {
-        HStack(spacing: 8) {
-            CompactSelectorCapsule(
-                title: "MODE",
-                value: camera.captureMode == .photo ? "PHOTO" : "VIDEO",
-                theme: selectedTheme,
-                isActive: true,
-                action: {
-                    camera.toggleCaptureMode()
-                }
-            )
-
-            CompactSelectorCapsule(
-                title: "CAM",
-                value: camera.selectedPreset.shortTitle.uppercased(),
-                theme: selectedTheme,
-                isActive: false,
-                action: {
-                    cyclePreset()
-                }
-            )
-
-            CompactSelectorCapsule(
-                title: "SIZE",
-                value: shortImageSizeTitle(camera.selectedImageSize),
-                theme: selectedTheme,
-                isActive: false,
-                action: {
-                    cycleImageSize()
-                }
-            )
-        }
-    }
-
-    func cameraViewport(in size: CGSize) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.black.opacity(0.72))
-
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(selectedTheme.borderColor.opacity(0.95), lineWidth: 2)
-
-            ZStack {
-                CameraPreview(session: camera.session)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                if let preview = camera.previewImage {
-                    Image(uiImage: preview)
-                        .resizable()
-                        .scaledToFill()
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-
-                if camera.captureMode == .video && camera.isRecording {
-                    VStack {
-                        HStack {
-                            recordingPill
-                            Spacer()
-                        }
-                        Spacer()
-                    }
-                    .padding(12)
-                }
-
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        if camera.addDateStamp {
-                            DateOverlayStamp()
-                                .padding(8)
-                        }
-                    }
-                }
-            }
-            .padding(8)
-        }
-        .frame(height: min(size.height * 0.56, 460))
-        .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 6)
     }
 
     var recordingPill: some View {
@@ -787,20 +634,30 @@ private struct DeviceShell<Content: View>: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(theme.panelGradient)
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.20),
+                            Color.white.opacity(0.08),
+                            Color.black.opacity(0.08)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(theme.borderColor.opacity(0.95), lineWidth: 2)
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .stroke(theme.borderColor.opacity(0.92), lineWidth: 2)
                 )
 
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(.white.opacity(0.03))
-                .padding(6)
+                .padding(7)
 
             content()
         }
-        .shadow(color: .black.opacity(0.28), radius: 14, x: 0, y: 8)
+        .shadow(color: .black.opacity(0.22), radius: 12, x: 0, y: 7)
     }
 }
 
@@ -845,34 +702,36 @@ private struct TopStatusBar: View {
     let smiley: SmileyAsset?
 
     var body: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 8) {
-                NetworkIndicator(theme: theme)
-                BatteryIndicator(theme: theme)
-            }
-
-            Spacer(minLength: 8)
-
-            Text(isRecording ? formatDuration(recordingDuration) : moscowTimeString(from: date))
-                .font(.system(size: 15, weight: .bold, design: .monospaced))
-                .foregroundStyle(theme.primaryTextColor)
-                .lineLimit(1)
-
-            Spacer(minLength: 8)
-
-            SmileyCircleView(smiley: smiley, theme: theme)
-                .frame(width: 34, height: 34)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
+        ZStack {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(theme.topBarFill)
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .stroke(theme.borderColor.opacity(0.9), lineWidth: 1.5)
                 )
-        )
+
+            HStack {
+                HStack(spacing: 8) {
+                    NetworkIndicator(theme: theme)
+                    BatteryIndicator(theme: theme)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+
+            Text(isRecording ? formatDuration(recordingDuration) : moscowTimeString(from: date))
+                .font(.system(size: 15, weight: .bold, design: .monospaced))
+                .foregroundStyle(theme.primaryTextColor)
+                .lineLimit(1)
+
+            HStack {
+                Spacer()
+                SmileyCircleView(smiley: smiley, theme: theme)
+                    .frame(width: 32, height: 32)
+            }
+            .padding(.horizontal, 10)
+        }
+        .frame(height: 50)
     }
 }
 
@@ -919,13 +778,14 @@ private struct BottomSoftKeyBar: View {
     let rightLabel: String
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .bottom, spacing: 10) {
             BottomCornerButton(
                 theme: theme,
                 title: leftLabel,
                 resourceName: "icon",
                 action: leftAction
             )
+            .frame(width: 82)
 
             Spacer(minLength: 0)
 
@@ -934,6 +794,7 @@ private struct BottomSoftKeyBar: View {
                 resourceName: centerResourceName,
                 action: centerAction
             )
+            .frame(width: 104)
 
             Spacer(minLength: 0)
 
@@ -944,7 +805,9 @@ private struct BottomSoftKeyBar: View {
                 systemSymbol: "gearshape.fill",
                 action: rightAction
             )
+            .frame(width: 82)
         }
+        .frame(height: 108)
     }
 }
 
@@ -971,15 +834,15 @@ private struct BottomCornerButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 4) {
+            VStack(spacing: 6) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(theme.softCapsuleFill)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(theme.borderColor.opacity(0.75), lineWidth: 1.2)
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(theme.borderColor.opacity(0.78), lineWidth: 1.2)
                         )
-                        .frame(width: 66, height: 52)
+                        .frame(width: 68, height: 58)
 
                     if let resourceName {
                         ResourceImageView(name: resourceName)
@@ -993,9 +856,10 @@ private struct BottomCornerButton: View {
                 }
 
                 Text(title)
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundStyle(theme.primaryTextColor)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
         }
         .buttonStyle(.plain)
@@ -1012,17 +876,17 @@ private struct CenterActionButton: View {
             ZStack {
                 Circle()
                     .fill(theme.bubbleGradient)
-                    .frame(width: 84, height: 84)
+                    .frame(width: 88, height: 88)
                     .overlay(
                         Circle()
                             .stroke(theme.borderColor.opacity(0.86), lineWidth: 2)
                     )
-                    .shadow(color: .black.opacity(0.20), radius: 6, x: 0, y: 4)
+                    .shadow(color: .black.opacity(0.18), radius: 6, x: 0, y: 4)
 
                 if ResourceImageLoader.image(named: resourceName) != nil {
                     ResourceImageView(name: resourceName)
                         .scaledToFit()
-                        .frame(width: 40, height: 40)
+                        .frame(width: 38, height: 38)
                 } else {
                     Image(systemName: "play.fill")
                         .font(.system(size: 24, weight: .bold))
@@ -1370,9 +1234,9 @@ private struct MediaViewerScreen: View {
     var viewerWindow: some View {
         ZStack {
             if ResourceImageLoader.image(named: "window") != nil {
-    ResourceImageView(name: "window")
-        .scaledToFit()
-        .frame(maxWidth: 360)
+                ResourceImageView(name: "window")
+                    .scaledToFit()
+                    .frame(maxWidth: 360)
             } else {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(theme.panelGradient)
@@ -1975,6 +1839,14 @@ private struct MediaItem: Identifiable, Hashable {
             return formatDuration(asset.duration)
         }
     }
+
+    static func == (lhs: MediaItem, rhs: MediaItem) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
 }
 
 private final class MediaLibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
@@ -2111,6 +1983,7 @@ private final class MediaLibraryStore: NSObject, ObservableObject, PHPhotoLibrar
         }
     }
 }
+
 // MARK: - Helpers
 
 private func moscowTimeString(from date: Date) -> String {
